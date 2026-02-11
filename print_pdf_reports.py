@@ -193,11 +193,13 @@ cycle = "Term 1 : FET"
 format = "06. Without Averages - All Terms"
 room = " All"
 
-report_folder = "reports"
+report_folder = "Reports"
 date = f"{datetime.datetime.now()}"
 date = date.replace(":", "T")
-path = os.path.join(path, report_folder, date)
-os.makedirs(name=path, exist_ok=True)
+cover_path = os.path.join(path, report_folder, date, "covers")
+report_path = os.path.join(path, report_folder, date, "reports")
+os.makedirs(name=cover_path, exist_ok=True)
+os.makedirs(name=report_path, exist_ok=True)
 
 #window.print_control_identifiers()
 id_cb_map = get_combo_boxes(window)
@@ -263,12 +265,12 @@ for grade in grades:
 
 		# Print one PDF with reports for all the learners in a class(grade + room).
 		progress_report_window = window.window(best_match="Print progress reports", control_type="Window")
-		process_learner(progress_report_window, grade, room, format, path, format_combo_box)
+		process_learner(progress_report_window, grade, room, format, report_path, format_combo_box)
 
 #---------------------------------- END OF REPORT PRINTING PROCESS FOR A ROOM ---------------------------------------------------
 
-print_cover_page(id_cb_map[60], "FET", path)
-print_cover_page(id_cb_map[60], "Senior", path)
+print_cover_page(id_cb_map[60], "FET", cover_path)
+print_cover_page(id_cb_map[60], "Senior", cover_path)
 
 window.window(best_match="Print progress reports", control_type="Window").Done.click()
 
