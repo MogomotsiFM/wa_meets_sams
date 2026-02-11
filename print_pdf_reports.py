@@ -207,41 +207,63 @@ id_cb_map = get_combo_boxes(window)
 #classes_window = window.window(parent=window, best_match="Select Options")
 year_combo_box = id_cb_map[73]
 year_combo_box.draw_outline()
-print("Year: ", get_combo_box_options(year_combo_box))
+years = get_combo_box_options(year_combo_box)
+print("Year: ", years)
 select_combo_box_option(year_combo_box, value=year)
 
 grade_combo_box = id_cb_map[74]
 grade_combo_box.draw_outline()
-print("Year: ", get_combo_box_options(grade_combo_box))
-select_combo_box_option(grade_combo_box, value=grade)
+grades = get_combo_box_options(grade_combo_box)
+print("Grades: ", grades)
 
-room_combo_box = id_cb_map[75]
-room_combo_box.draw_outline()
-print("Year: ", get_combo_box_options(room_combo_box))
-select_combo_box_option(room_combo_box, value=room)
+if "All" in grade:
+	gs = [g for g in grades if "All" not in g]
+	all_grades = True
+else:
+	gs = [grade]
+	all_grades = False
 
-cycle_combo_box = id_cb_map[72]
-cycle_combo_box.draw_outline()
-print("Year: ", get_combo_box_options(cycle_combo_box))
-select_combo_box_option(cycle_combo_box, value=cycle)
+grades = gs
+for grade in grades:
+	select_combo_box_option(grade_combo_box, value=grade)
 
-# There might be a bug in ComboBox.texts()
-[print(cl, cl.draw_outline(), cl.selected_text()) for _, cl in id_cb_map.items()]
+	room_combo_box = id_cb_map[75]
+	room_combo_box.draw_outline()
+	rooms = get_combo_box_options(room_combo_box)
+	print("Rooms: ", rooms)
 
-window.GO.click()
+	if all_grades or "All" in room:
+		rms = [r for r in rooms if "All" not in r]
+	else:
+		rms = [room]
+	rooms = rms
 
-# Configure report format
-# Do we need different format for different phases: FET vs senior?
-# Display these on the GUI
-format_combo_box = id_cb_map[40]
-format_combo_box.draw_outline()
-formats = get_combo_box_options(format_combo_box)
-print("Report formats: ", formats)
-select_combo_box_option(format_combo_box, value=format)
+	for room in rooms:
+		select_combo_box_option(room_combo_box, value=room)
 
-# Print one PDF with reports for all the learners in a class(grade + room).
-progress_report_window = window.window(best_match="Print progress reports", control_type="Window")
-process_learner(progress_report_window, grade, room, format, path, format_combo_box)
+		cycle_combo_box = id_cb_map[72]
+		cycle_combo_box.draw_outline()
+		cycles = get_combo_box_options(cycle_combo_box)
+		print("Cycles: ", cycles)
+		select_combo_box_option(cycle_combo_box, value=cycle)
+
+		# There might be a bug in ComboBox.texts()
+		[print(cl, cl.draw_outline(), cl.selected_text()) for _, cl in id_cb_map.items()]
+
+		window.GO.click()
+
+		# Configure report format
+		# Do we need different format for different phases: FET vs senior?
+		# Display these on the GUI
+		format_combo_box = id_cb_map[40]
+		format_combo_box.draw_outline()
+		formats = get_combo_box_options(format_combo_box)
+		print("Report formats: ", formats)
+		select_combo_box_option(format_combo_box, value=format)
+
+		# Print one PDF with reports for all the learners in a class(grade + room).
+		progress_report_window = window.window(best_match="Print progress reports", control_type="Window")
+		process_learner(progress_report_window, grade, room, format, path, format_combo_box)
 
 #---------------------------------- END OF REPORT PRINTING PROCESS FOR A ROOM ---------------------------------------------------
 
