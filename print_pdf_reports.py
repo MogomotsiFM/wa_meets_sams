@@ -18,8 +18,7 @@ def select_combo_box_option(combo_box: ComboBoxWrapper, value: str):
 	"""
 	There seems to be a bug with how pywinauto::ComboBox::select works.
 	
-	:param classes_window: The parent of the combo box want to select
-	:param combo_box: The name of the combo box of interest
+	:param combo_box: The combo box object of interest
 	:param value: The option in the combo box that we want to select
 	"""
 
@@ -33,8 +32,7 @@ def get_combo_box_options(options_combo: ComboBoxWrapper) -> list[str]:
 	Returns the list of options available from the combo box.
 	These options are then forwarded to the GUI so that the user may select one of them.
 	
-	:param window: The parent of the combo box in which we are interested 
-	:param combo_box: The name of the combo box of interest
+	:param combo_box: The combo box object of interest
 	"""
 	
 	options_combo = options_combo.expand()
@@ -58,6 +56,7 @@ def process_learner(window, grade, room, report_format, report_file_path, report
 	: param window: The handle to the "Print learner progress reports" window
 	: param learner_idx: Allows iterating over all the learners in a grade
 	: param grade: The grade and name of the learner are used to name report files
+	: param report_format_combo_box: 
 	"""
 	window.window(best_match="Learners", control_type="Group").window(best_match="All", control_type="Button").click()
 
@@ -205,41 +204,28 @@ id_cb_map = get_combo_boxes(window)
 
 #--------------------------------- START OF REPORT PRINTING PROCESS FOR A ROOM -----------------------------------------------
 
-classes_window = window.window(parent=window, best_match="Select Options")
+#classes_window = window.window(parent=window, best_match="Select Options")
 year_combo_box = id_cb_map[73]
 year_combo_box.draw_outline()
 print("Year: ", get_combo_box_options(year_combo_box))
 select_combo_box_option(year_combo_box, value=year)
 
-#classes_window.ComboBox3.draw_outline()
-#classes_window.window(control_id=72, control_type="ComboBox").draw_outline()
-#print("Grades: ", get_combo_box_options(classes_window, control_id=72))
-#select_combo_box_option(classes_window, control_id=72, value=grade)
 grade_combo_box = id_cb_map[74]
 grade_combo_box.draw_outline()
 print("Year: ", get_combo_box_options(grade_combo_box))
 select_combo_box_option(grade_combo_box, value=grade)
 
-#classes_window.ComboBox4.draw_outline()
-#classes_window.window(control_id=73, control_type="ComboBox").draw_outline()
-#print("Classes: ", get_combo_box_options(classes_window, control_id=73))
-#select_combo_box_option(classes_window, control_id=73, value=room)
 room_combo_box = id_cb_map[75]
 room_combo_box.draw_outline()
 print("Year: ", get_combo_box_options(room_combo_box))
 select_combo_box_option(room_combo_box, value=room)
 
-#classes_window.ComboBox6.draw_outline()
-#classes_window.window(control_id=75, control_type="ComboBox").draw_outline()
-#print("Cycle: ", get_combo_box_options(classes_window, control_id=75))
-#select_combo_box_option(classes_window, control_id=75, value=cycle)
 cycle_combo_box = id_cb_map[72]
 cycle_combo_box.draw_outline()
 print("Year: ", get_combo_box_options(cycle_combo_box))
 select_combo_box_option(cycle_combo_box, value=cycle)
 
 # There might be a bug in ComboBox.texts()
-#[print(cl, cl.draw_outline(), cl.selected_text()) for cl in window.window(best_match="Select Options").children(control_type="ComboBox")]
 [print(cl, cl.draw_outline(), cl.selected_text()) for _, cl in id_cb_map.items()]
 
 window.GO.click()
