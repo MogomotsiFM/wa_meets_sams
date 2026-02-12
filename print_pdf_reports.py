@@ -26,6 +26,16 @@ class LoginStatus(Enum):
 	LOCKED_OUT= 4
 
 
+# These values were discovered using: window.print_control_identifiers() function.
+class ComboBoxControlId(Enum):
+	YEAR   = 73
+	GRADE  = 74
+	ROOM   = 75 # Eg. 10A, 12C, ...
+	CYCLE  = 72 # Term 1, 2, 3, or 4
+	PHASE  = 60 # FET or Senior
+	FORMAT = 40 # Report format
+
+
 def select_combo_box_option(combo_box: ComboBoxWrapper, value: str):
 	"""
 	There seems to be a bug with how pywinauto::ComboBox::select works.
@@ -241,8 +251,9 @@ while(True):
 
 
 username = u"administrator"
-password = u"@dmin2024"
-success, message = login(window, username, password)
+password = u"@dmin2023"
+status, message = login(window, username, password)
+print("Login: ", status, " Message: ", message)
 
 # Navigate to the school reports configuration tab
 window.window(best_match="Curriculum Related Data").wait("ready", timeout=20)
@@ -276,13 +287,13 @@ id_cb_map = get_combo_boxes(window)
 
 #--------------------------------- START OF REPORT PRINTING PROCESS FOR A ROOM -----------------------------------------------
 
-year_combo_box = id_cb_map[73]
+year_combo_box = id_cb_map[ComboBoxControlId.YEAR.value]
 year_combo_box.draw_outline()
 years = get_combo_box_options(year_combo_box)
 print("Year: ", years)
 select_combo_box_option(year_combo_box, value=year)
 
-grade_combo_box = id_cb_map[74]
+grade_combo_box = id_cb_map[ComboBoxControlId.GRADE.value]
 grade_combo_box.draw_outline()
 grades = get_combo_box_options(grade_combo_box)
 print("Grades: ", grades)
@@ -298,7 +309,7 @@ grades = gs
 for grade in grades:
 	select_combo_box_option(grade_combo_box, value=grade)
 
-	room_combo_box = id_cb_map[75]
+	room_combo_box = id_cb_map[ComboBoxControlId.ROOM.value]
 	room_combo_box.draw_outline()
 	rooms = get_combo_box_options(room_combo_box)
 	print("Rooms: ", rooms)
@@ -312,7 +323,7 @@ for grade in grades:
 	for room in rooms:
 		select_combo_box_option(room_combo_box, value=room)
 
-		cycle_combo_box = id_cb_map[72]
+		cycle_combo_box = id_cb_map[ComboBoxControlId.CYCLE.value]
 		cycle_combo_box.draw_outline()
 		cycles = get_combo_box_options(cycle_combo_box)
 		print("Cycles: ", cycles)
@@ -326,7 +337,7 @@ for grade in grades:
 		# Configure report format
 		# Do we need different format for different phases: FET vs senior?
 		# Display these on the GUI
-		format_combo_box = id_cb_map[40]
+		format_combo_box = id_cb_map[ComboBoxControlId.FORMAT.value]
 		format_combo_box.draw_outline()
 		formats = get_combo_box_options(format_combo_box)
 		print("Report formats: ", formats)
@@ -338,9 +349,9 @@ for grade in grades:
 
 #---------------------------------- END OF REPORT PRINTING PROCESS FOR A ROOM ---------------------------------------------------
 
-print_cover_page(id_cb_map[60], "FET", cover_path)
+print_cover_page(id_cb_map[ComboBoxControlId.PHASE.value], "FET", cover_path)
 window.window(best_match="Print progress reports", control_type="Window").wait("ready", timeout=5)
-print_cover_page(id_cb_map[60], "Senior", cover_path)
+print_cover_page(id_cb_map[ComboBoxControlId.PHASE.value], "Senior", cover_path)
 
 window.window(best_match="Print progress reports", control_type="Window").Done.click()
 
