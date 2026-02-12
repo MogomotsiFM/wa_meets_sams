@@ -231,7 +231,6 @@ id_cb_map = get_combo_boxes(window)
 
 #--------------------------------- START OF REPORT PRINTING PROCESS FOR A ROOM -----------------------------------------------
 
-#classes_window = window.window(parent=window, best_match="Select Options")
 year_combo_box = id_cb_map[73]
 year_combo_box.draw_outline()
 years = get_combo_box_options(year_combo_box)
@@ -295,6 +294,7 @@ for grade in grades:
 #---------------------------------- END OF REPORT PRINTING PROCESS FOR A ROOM ---------------------------------------------------
 
 print_cover_page(id_cb_map[60], "FET", cover_path)
+window.window(best_match="Print progress reports", control_type="Window").wait("ready", timeout=5)
 print_cover_page(id_cb_map[60], "Senior", cover_path)
 
 window.window(best_match="Print progress reports", control_type="Window").Done.click()
