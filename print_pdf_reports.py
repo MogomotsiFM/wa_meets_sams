@@ -2,6 +2,10 @@ import os
 import time
 import datetime
 
+from enum import Enum
+
+from functools import reduce
+
 import warnings
 #warnings.simplefilter("ignore", UserWarning)
 warnings.filterwarnings("ignore")
@@ -14,6 +18,13 @@ from pywinauto.controls.uiawrapper import UIAWrapper
 from pywinauto.application import Application
 
 from typing import Literal
+
+
+class LoginStatus(Enum):
+	SUCCESS= 1
+	FAILURE= 2
+	LOCKED_OUT= 4
+
 
 def select_combo_box_option(combo_box: ComboBoxWrapper, value: str):
 	"""
@@ -155,6 +166,50 @@ def init(window):
 	login_window.wait(wait_for="ready", timeout=15)
 
 
+def login(window, username, password) -> tuple[LoginStatus, str]:
+	login_window = window.window(title_re="User Login", control_type="Window")
+	# Hard-code the username to force the creation of a profile specifically for this application.
+	# This will allow us to lock down the permissions of the application.
+	# The same bug is triggered here!!!!
+	login_window.window(title_re="User Details").Edit1.set_text(username)
+	login_window.window(title_re="User Details").Edit2.set_text(password)
+
+	login_window.window(best_match="Log In", control_type="Button").click()
+
+	try:
+		window.EdusolSAMS.wait("ready", timeout=1)
+		dlg_msgs = window.EdusolSAMS.window(control_type="Text").texts()
+		dlg_msg = reduce(lambda a, b : a + b, dlg_msgs)
+		window.EdusolSAMS.OK.click()
+		
+		if "success" in dlg_msg:
+			return LoginStatus.SUCCESS, ""
+		else:
+			return LoginStatus.FAILURE, dlg_msg
+	except Exception as exp:
+		login_failure = window.window(parent=login_window, best_match="User message")
+		# message: You have not entered the correct message
+		# message: 
+		login_failure_msgs = login_failure.window(control_type="Text").texts()
+		login_failure_msg  = reduce(lambda a, b : a + b, login_failure_msgs)
+		login_failure.OK.click()
+		
+		# It is possible that we have tried to login too many times
+		# and have been locked out.
+		try:
+			login_window.EdusolSAMS.wait("ready", timeout=1)
+			login_lockout_msgs = login_window.EdusolSAMS.window(control_type="Text").texts()
+			login_lockout_msg  = reduce(lambda a, b : a + b, login_lockout_msgs)
+			login_window.EdusolSAMS.OK.click()
+		except Exception as exp:
+			# If an exception is thrown it means there was no dialog that indicates that we tried too
+			# many time. So, we failed, but can still try again.
+			return LoginStatus.FAILURE, login_failure_msg
+		else:
+			return LoginStatus.FAILURE, login_lockout_msg
+
+
+
 os.putenv("PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT", "10")
 #os.environ["PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT"] = "10"
 
@@ -184,20 +239,10 @@ while(True):
 	else: # Executed if no exception is raised.
 		break
 
-login_window = window.window(title_re="User Login", control_type="Window")
-# Hard-code the username to force the creation of a profile specifically for this application.
-# This will allow us to lock down the permissions of the application.
-# The same bug is triggered here!!!!
-login_window.window(title_re="User Details").Edit1.set_text(u"administrator")
-login_window.window(title_re="User Details").Edit2.set_text(u"@dmin2023")
 
-# login_window.window(best_match="Log In", control_type="Button").wait("ready", timeout=10)
-login_window.window(best_match="Log In", control_type="Button").click()
-
-# We have successfully logged in!
-# We need to be able to tell when we have successfully logged in 
-# Or if the last attempt failed
-window.EdusolSAMS.OK.click()
+username = u"administrator"
+password = u"@dmin2024"
+success, message = login(window, username, password)
 
 # Navigate to the school reports configuration tab
 window.window(best_match="Curriculum Related Data").wait("ready", timeout=20)
