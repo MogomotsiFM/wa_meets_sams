@@ -1,4 +1,5 @@
 import os
+import time
 import datetime
 
 import warnings
@@ -24,6 +25,9 @@ def select_combo_box_option(combo_box: ComboBoxWrapper, value: str):
 
 	combo_box = combo_box.expand()
 	kids = combo_box.children(control_type="List")
+	print("\n\nKids:", value)
+	for k in kids:
+		print(k.texts())
 	kids[0].item(value).invoke()
 
 
@@ -110,6 +114,46 @@ def print_pdf(button: ButtonWrapper, filename: str):
 	parent.Done.click()
 
 
+def init(window):
+	# Database location
+	# Use a database on this computer
+	print("Testing:   ", window.window(best_match="Select Database Location"))
+	window.window(best_match="Select Database Location").window(best_match="On the network").click()
+	window["On this computer"].click()
+
+	# Do not copy a database before opening it???
+	desired_copy_db_flag = False
+	actual_copy_db_flag = window["Copy database before opening"].get_toggle_state()
+	if desired_copy_db_flag != actual_copy_db_flag:
+		window["Copy database before opening"].toggle()
+
+	databases = window["Databases on this computer"].window(control_type="List").texts()
+
+	# Update the GUI with the list of available databases and let the user select one
+	print("\n\n\nDatabases:")
+	[print(db) for db in databases]
+
+	# Select a database from the list
+	# Get this value from the GUI
+	db = "TestingDB"
+	window["Databases on this computer"].window(control_type="List").item(db).invoke()
+
+	# There is a bug in pywinauto such that when a button is pressed the GUI responds but 
+	# the code hangs and times out.
+	# https://github.com/pywinauto/pywinauto/blob/c23e64d5ea2c7d251f263973d320294f2fba5ef0/pywinauto/controls/uiawrapper.py#L548
+	# TODO: Fix this?
+	try:
+		# Connect to a database
+		window["Databases on this computer"].window(best_match="continue").invoke()
+	except Exception as exp:
+		print("Exception: ", exp)
+
+	# POPIA Acknowledgement
+	window.window(title_re="POPIA").window(best_match="I accept").click()
+
+	login_window = window.window(title_re="User Login", control_type="Window")
+	login_window.wait(wait_for="ready", timeout=15)
+
 
 os.putenv("PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT", "10")
 #os.environ["PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT"] = "10"
@@ -117,61 +161,42 @@ os.putenv("PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT", "10")
 path = os.path.join("C:\\", "Users", "GAME", "Desktop", "EdusolSAMS")
 
 app_location = os.path.join(path, "EdusolSAMS.exe")
-app = Application(backend="uia").start(app_location)
 
-window = app.window(title_re="SA-SAMS")
-window.wait("ready", timeout=30)
-window.set_focus()
-#window.print_control_identifiers()
+while(True):
+	try:
+		app = Application(backend="uia").start(app_location)
 
-# Database location
-# Use a database on this computer
-print("Testing:   ", window.window(best_match="Select Database Location"))
-window.window(best_match="Select Database Location").window(best_match="On the network").click()
-window["On this computer"].click()
+		window = app.window(title_re="SA-SAMS")
+		window.wait("ready", timeout=30)
+		window.set_focus()
+		#window.print_control_identifiers()
 
-# Do not copy a database before opening it???
-desired_copy_db_flag = False
-actual_copy_db_flag = window["Copy database before opening"].get_toggle_state()
-if desired_copy_db_flag != actual_copy_db_flag:
-	window["Copy database before opening"].toggle()
+		init(window)
+	except Exception as exp:
+		# Most likely the login window did not come up. There is a note somewhere about this.
+		# Check that SA-SAMS is not running
+		if app.is_process_running():
+			app.kill()
 
-databases = window["Databases on this computer"].window(control_type="List").texts()
-
-# Update the GUI with the list of available databases and let the user select one
-print("\n\n\nDatabases:")
-[print(db) for db in databases]
-
-# Select a database from the list
-# Get this value from the GUI
-db = "TestingDB"
-window["Databases on this computer"].window(control_type="List").item(db).invoke()
-
-# There is a bug in pywinauto such that when a button is pressed the GUI responds but 
-# the code hangs and times out.
-# https://github.com/pywinauto/pywinauto/blob/c23e64d5ea2c7d251f263973d320294f2fba5ef0/pywinauto/controls/uiawrapper.py#L548
-# TODO: Fix this?
-try:
-	# Connect to a database
-	window["Databases on this computer"].window(best_match="continue").invoke()
-except Exception as exp:
-	print("Exception: ", exp)
-
-# POPIA Acknowledgement
-window.window(title_re="POPIA").window(best_match="I accept").click()
+			print("Process was running")
+		print("Trying to start the program again...")
+		time.sleep(5)
+	else: # Executed if no exception is raised.
+		break
 
 login_window = window.window(title_re="User Login", control_type="Window")
-login_window.wait(wait_for="ready", timeout=15)
 # Hard-code the username to force the creation of a profile specifically for this application.
 # This will allow us to lock down the permissions of the application.
 # The same bug is triggered here!!!!
 login_window.window(title_re="User Details").Edit1.set_text(u"administrator")
 login_window.window(title_re="User Details").Edit2.set_text(u"@dmin2023")
 
-login_window.window(best_match="Log In", control_type="Button").wait("ready", timeout=10)
+# login_window.window(best_match="Log In", control_type="Button").wait("ready", timeout=10)
 login_window.window(best_match="Log In", control_type="Button").click()
 
 # We have successfully logged in!
+# We need to be able to tell when we have successfully logged in 
+# Or if the last attempt failed
 window.EdusolSAMS.OK.click()
 
 # Navigate to the school reports configuration tab
