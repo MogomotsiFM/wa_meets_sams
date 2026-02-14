@@ -47,7 +47,7 @@ class Presenter:
 
         self.id_cb_map = {}
 
-        self.app, self.window, self.databases = self.start(app_path)
+        self.app, self.window = self._start(app_path)
 
 
     def select_combo_box_option(self, combo_box: ComboBoxWrapper, value: str):
@@ -149,44 +149,83 @@ class Presenter:
         parent.Done.click()
 
     
-    def copy_database_before_opening(self, window, desired_copy_db_flag):
-        actual_copy_db_flag = window["Copy database before opening"].get_toggle_state()
+    def copy_db_before_opening(self, desired_copy_db_flag):
+        actual_copy_db_flag = self.get_copy_db_checkbox_state()
         if desired_copy_db_flag != actual_copy_db_flag:
-            window["Copy database before opening"].toggle()
+            self.window["Copy database before opening"].toggle()
 
 
-    def local_databases_list(self, window):
-        window["On this computer"].click()
-
-        databases = window["Databases on this computer"].window(control_type="List").texts()
-
-        return databases
+    def get_copy_db_checkbox_state(self):
+        state = self.window["Copy database before opening"].get_toggle_state()
+        return state>0
 
 
-    def select_local_database(self, window, db_name):
-        window["Databases on this computer"].window(control_type="List").item(db_name).invoke()
+    def local_dbs_list(self):
+        #self.window["On this computer"].click()
+        #self.use_local_db()
+
+        databases = self.window["Databases on this computer"].window(control_type="List").texts()
+        dbs = [item for sublist in databases for item in sublist]
+        return dbs
 
 
-    def continue_to_login(self, window):
+    def last_used_networked_db(self):
+        # The pre-condition is that the networked db radio was clicked.
+        #self.use_networked_db()
+
+        textbox = self.window["Database on a networked computer"].window(control_type="Edit")
+        path = textbox.get_line(0)
+        return path
+    
+
+    def select_local_db(self, db_name):
+        self.window["Databases on this computer"].window(control_type="List").item(db_name).invoke()
+
+
+    def set_networked_db(self, db_path):
+        textbox = self.window["Database on a networked computer"].window(control_type="Edit")
+
+        textbox.set_edit_text(db_path)
+
+
+    def use_networked_db(self):
+        self.window.window(best_match="Select Database Location").window(best_match="On the network").click()
+
+
+    def use_networked_db_radio_state(self):
+        radio = self.window.window(best_match="Select Database Location").window(best_match="On the network")
+
+        return radio.is_selected()
+
+
+    def use_local_db(self):
+        self.window["On this computer"].click()
+
+
+    def use_local_db_radio_state(self):
+        return self.window["On this computer"].is_selected()
+                                 
+
+    def continue_to_login(self):
         # There is a bug in pywinauto such that when a button is pressed the GUI responds but 
         # the code hangs and times out.
         # https://github.com/pywinauto/pywinauto/blob/c23e64d5ea2c7d251f263973d320294f2fba5ef0/pywinauto/controls/uiawrapper.py#L548
         # TODO: Fix this?
         try:
             # Connect to a database
-            window["Databases on this computer"].window(best_match="continue").invoke()
+            self.window["Databases on this computer"].window(best_match="continue").invoke()
             # window["Databases on a networked computer"].window(best_match="continue").invoke()
         except Exception as exp:
             print("Exception: ", exp)
 
         # POPIA Acknowledgement
-        window.window(title_re="POPIA").window(best_match="I accept").click()
+        self.window.window(title_re="POPIA").window(best_match="I accept").click()
 
-        login_window = window.window(title_re="User Login", control_type="Window")
+        login_window = self.window.window(title_re="User Login", control_type="Window")
         login_window.wait(wait_for="ready", timeout=15)
 
 
-    def go_to_progress_report_widget(self, window):
+    def go_to_progress_report_widget(self):
         # Navigate to the school reports configuration tab
         self.window.window(best_match="Curriculum Related Data").wait("ready", timeout=20)
         self.window.window(best_match="Curriculum Related Data").click()
@@ -197,7 +236,7 @@ class Presenter:
         self.id_cb_map = self.get_combo_boxes()
 
 
-    def login(self, window, username, password) -> tuple[LoginStatus, str]:
+    def login(self, username, password) -> tuple[LoginStatus, str]:
         login_window = self.window.window(title_re="User Login", control_type="Window")
         # Hard-code the username to force the creation of a profile specifically for this application.
         # This will allow us to lock down the permissions of the application.
@@ -240,7 +279,7 @@ class Presenter:
                 return LoginStatus.FAILURE, login_lockout_msg
 
 
-    def start(self, path):
+    def _start(self, path):
         app_location = os.path.join(path, "EdusolSAMS.exe")
 
         while(True):
@@ -253,7 +292,7 @@ class Presenter:
                 #window.print_control_identifiers()
 
                 #init(window)
-                databases = self.local_databases_list(window)
+                #databases = self.local_dbs_list(window)
             except Exception as exp:
                 # Most likely the login window did not come up. There is a note somewhere about this.
                 # Check that SA-SAMS is not running
@@ -266,7 +305,10 @@ class Presenter:
             else: # Executed if no exception is raised.
                 break
 
-        return app, window, databases
+        self.app = app
+        self.window = window
+
+        return app, window
 
     def get_years_list(self):
         year_combo_box = self.id_cb_map[ComboBoxControlId.YEAR.value]
@@ -412,9 +454,3 @@ class Presenter:
                 #self.process_learner(progress_report_window, grade, room, format, self.report_path, format_combo_box)
                 self.process_learner(grade, room, format, self.report_path)
 
-
-
-
-    
-
-    
