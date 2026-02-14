@@ -81,7 +81,7 @@ class Presenter:
         return labels
 
 
-    def get_combo_boxes(self, window):
+    def _get_combo_boxes(self, window):
         cbs = window.descendants(control_type="ComboBox")
         id_combo_box_map = {cb.control_id(): cb for cb in cbs}
         
@@ -207,9 +207,10 @@ class Presenter:
                                  
 
     def continue_to_login(self):
-        # Connect to a database
-        self.window["Databases on this computer"].window(best_match="continue").invoke()
-        # window["Databases on a networked computer"].window(best_match="continue").invoke()
+        if self.use_local_db_radio_state():
+            self.window["Databases on this computer"].window(best_match="continue").click_input()
+        else:
+            self.window["Databases on a networked computer"].window(best_match="continue").click_input()
         
         # POPIA Acknowledgement
         self.window.window(title_re="POPIA").window(best_match="I accept").click()
@@ -226,7 +227,7 @@ class Presenter:
         # The following is deliberate
         self.window.window(best_match="Print Learner Progress Reports").click()
 
-        self.id_cb_map = self.get_combo_boxes()
+        self.id_cb_map = self._get_combo_boxes()
 
 
     def login(self, username, password) -> tuple[LoginStatus, str]:
