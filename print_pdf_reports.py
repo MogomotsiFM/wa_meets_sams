@@ -157,17 +157,9 @@ def init(window):
 	# Select a database from the list
 	# Get this value from the GUI
 	db = "TestingDB"
-	window["Databases on this computer"].window(control_type="List").item(db).invoke()
+	window["Databases on this computer"].window(control_type="List").item(db).click_input()
 
-	# There is a bug in pywinauto such that when a button is pressed the GUI responds but 
-	# the code hangs and times out.
-	# https://github.com/pywinauto/pywinauto/blob/c23e64d5ea2c7d251f263973d320294f2fba5ef0/pywinauto/controls/uiawrapper.py#L548
-	# TODO: Fix this?
-	try:
-		# Connect to a database
-		window["Databases on this computer"].window(best_match="continue").invoke()
-	except Exception as exp:
-		print("Exception: ", exp)
+	window["Databases on this computer"].window(best_match="continue").invoke()
 
 	# POPIA Acknowledgement
 	window.window(title_re="POPIA").window(best_match="I accept").click()

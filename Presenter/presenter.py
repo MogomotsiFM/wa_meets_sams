@@ -179,7 +179,7 @@ class Presenter:
     
 
     def select_local_db(self, db_name):
-        self.window["Databases on this computer"].window(control_type="List").item(db_name).invoke()
+        self.window["Databases on this computer"].window(control_type="List").item(db_name).click_input()
 
 
     def set_networked_db(self, db_path):
@@ -207,17 +207,10 @@ class Presenter:
                                  
 
     def continue_to_login(self):
-        # There is a bug in pywinauto such that when a button is pressed the GUI responds but 
-        # the code hangs and times out.
-        # https://github.com/pywinauto/pywinauto/blob/c23e64d5ea2c7d251f263973d320294f2fba5ef0/pywinauto/controls/uiawrapper.py#L548
-        # TODO: Fix this?
-        try:
-            # Connect to a database
-            self.window["Databases on this computer"].window(best_match="continue").invoke()
-            # window["Databases on a networked computer"].window(best_match="continue").invoke()
-        except Exception as exp:
-            print("Exception: ", exp)
-
+        # Connect to a database
+        self.window["Databases on this computer"].window(best_match="continue").invoke()
+        # window["Databases on a networked computer"].window(best_match="continue").invoke()
+        
         # POPIA Acknowledgement
         self.window.window(title_re="POPIA").window(best_match="I accept").click()
 
