@@ -189,20 +189,20 @@ class Presenter:
 
 
     def use_networked_db(self):
-        self.window.window(best_match="Select Database Location").window(best_match="On the network").click()
+        self.window["On the network"].click()
 
 
     def use_networked_db_radio_state(self):
-        radio = self.window.window(best_match="Select Database Location").window(best_match="On the network")
+        radio = self.window["On the network"].click()
 
         return radio.is_selected()
 
 
-    def use_local_db(self):
+    def use_local_db(self) -> None:
         self.window["On this computer"].click()
 
 
-    def use_local_db_radio_state(self):
+    def use_local_db_radio_state(self) -> bool:
         return self.window["On this computer"].is_selected()
                                  
 
