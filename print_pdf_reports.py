@@ -139,7 +139,7 @@ def init(window):
 	# Database location
 	# Use a database on this computer
 	print("Testing:   ", window.window(best_match="Select Database Location"))
-	window.window(best_match="Select Database Location").window(best_match="On the network").click()
+	window["On the network"].click()
 	window["On this computer"].click()
 
 	# Do not copy a database before opening it???
@@ -185,7 +185,7 @@ def login(window, username, password) -> tuple[LoginStatus, str]:
 		window.EdusolSAMS.OK.click()
 		
 		if "success" in dlg_msg:
-			return LoginStatus.SUCCESS, ""
+			return LoginStatus.SUCCESS, dlg_msg
 		else:
 			return LoginStatus.FAILURE, dlg_msg
 	except Exception as exp:
