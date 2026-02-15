@@ -157,13 +157,11 @@ class Presenter:
     def copy_db_before_opening(self, desired_copy_db_flag):
         actual_copy_db_flag = self.get_copy_db_checkbox_state()
         if desired_copy_db_flag != actual_copy_db_flag:
-            #checkbox = self.cache.setdefault('self.window["Copy database before opening"]', self.window["Copy database before opening"])
             checkbox = self.controls_cache('self.window["Copy database before opening"]')
             checkbox.toggle()
 
 
     def get_copy_db_checkbox_state(self):
-        #checkbox = self.cache.setdefault('self.window["Copy database before opening"]', self.window["Copy database before opening"])
         checkbox = self.controls_cache('self.window["Copy database before opening"]')
         state = checkbox.get_toggle_state()
 
@@ -171,7 +169,6 @@ class Presenter:
 
 
     def local_dbs_list(self):
-        #lst = self.cache.setdefault('self.window["Databases on this computer"].window(control_type="List")', eval('self.window["Databases on this computer"].window(control_type="List")'))
         lst = self.controls_cache('self.window["Databases on this computer"].window(control_type="List")')
         databases = lst.texts()
         dbs = [item for sublist in databases for item in sublist]
@@ -179,46 +176,38 @@ class Presenter:
 
 
     def last_used_networked_db(self):
-        #textbox = self.cache.setdefault('self.window["Database on a networked computer"].window(control_type="Edit")', eval('self.window["Database on a networked computer"].window(control_type="Edit")'))
         textbox = self.controls_cache('self.window["Database on a networked computer"].window(control_type="Edit")')
         path = textbox.get_line(0)
         return path
     
 
     def select_local_db(self, db_name):
-        #lst = self.cache.setdefault('self.window["Databases on this computer"].window(control_type="List")', eval('self.window["Databases on this computer"].window(control_type="List")'))
         lst = self.controls_cache('self.window["Databases on this computer"].window(control_type="List")')
         lst.item(db_name).click_input()
 
 
-
     def set_networked_db(self, db_path):
-        #textbox = self.cache.setdefault('self.window["Database on a networked computer"].window(control_type="Edit")', eval('self.window["Database on a networked computer"].window(control_type="Edit")'))
         textbox = self.controls_cache('self.window["Database on a networked computer"].window(control_type="Edit")')
 
         textbox.set_edit_text(db_path)
 
 
     def use_networked_db(self) -> None:
-        #radio = self.cache.setdefault('self.window["On the network"]', self.window["On the network"])
         radio = self.controls_cache('self.window["On the network"]')
         radio.click()
 
 
     def use_networked_db_radio_state(self) -> bool:
-        #radio = self.cache.setdefault('self.window["On the network"]', self.window["On the network"])
         radio = self.controls_cache('self.window["On the network"]')
         return radio.is_selected()
     
 
     def use_local_db(self) -> None:
-        #radio = self.cache.setdefault('self.window["On this computer"]', self.window["On this computer"])
         radio = self.controls_cache('self.window["On this computer"]')
         radio.click()
 
 
     def use_local_db_radio_state(self) -> bool:
-        #radio = self.cache.setdefault('self.window["On this computer"]', self.window["On this computer"])
         radio = self.controls_cache('self.window["On this computer"]')
         return radio.is_selected()
                              
