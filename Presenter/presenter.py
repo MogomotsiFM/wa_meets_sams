@@ -46,8 +46,13 @@ class Presenter:
         os.makedirs(name=self.report_path, exist_ok=True)
 
         self.id_cb_map = {}
+        self.cache = {}
 
         self.app, self.window = self._start(app_path)
+
+        self.cache = self.create_controls_cache()
+        print("Cache:")
+        [print(k, control, type(control)) for k, control in self.cache.items()]
 
 
     def select_combo_box_option(self, combo_box: ComboBoxWrapper, value: str):
@@ -152,71 +157,117 @@ class Presenter:
     def copy_db_before_opening(self, desired_copy_db_flag):
         actual_copy_db_flag = self.get_copy_db_checkbox_state()
         if desired_copy_db_flag != actual_copy_db_flag:
-            self.window["Copy database before opening"].toggle()
+            #checkbox = self.cache.setdefault('self.window["Copy database before opening"]', self.window["Copy database before opening"])
+            checkbox = self.controls_cache('self.window["Copy database before opening"]')
+            checkbox.toggle()
 
 
     def get_copy_db_checkbox_state(self):
-        state = self.window["Copy database before opening"].get_toggle_state()
+        #checkbox = self.cache.setdefault('self.window["Copy database before opening"]', self.window["Copy database before opening"])
+        checkbox = self.controls_cache('self.window["Copy database before opening"]')
+        state = checkbox.get_toggle_state()
+
         return state>0
 
 
     def local_dbs_list(self):
-        #self.window["On this computer"].click()
-        #self.use_local_db()
-
-        databases = self.window["Databases on this computer"].window(control_type="List").texts()
+        #lst = self.cache.setdefault('self.window["Databases on this computer"].window(control_type="List")', eval('self.window["Databases on this computer"].window(control_type="List")'))
+        lst = self.controls_cache('self.window["Databases on this computer"].window(control_type="List")')
+        databases = lst.texts()
         dbs = [item for sublist in databases for item in sublist]
         return dbs
 
 
     def last_used_networked_db(self):
-        # The pre-condition is that the networked db radio was clicked.
-        #self.use_networked_db()
-
-        textbox = self.window["Database on a networked computer"].window(control_type="Edit")
+        #textbox = self.cache.setdefault('self.window["Database on a networked computer"].window(control_type="Edit")', eval('self.window["Database on a networked computer"].window(control_type="Edit")'))
+        textbox = self.controls_cache('self.window["Database on a networked computer"].window(control_type="Edit")')
         path = textbox.get_line(0)
         return path
     
 
     def select_local_db(self, db_name):
-        self.window["Databases on this computer"].window(control_type="List").item(db_name).click_input()
+        #lst = self.cache.setdefault('self.window["Databases on this computer"].window(control_type="List")', eval('self.window["Databases on this computer"].window(control_type="List")'))
+        lst = self.controls_cache('self.window["Databases on this computer"].window(control_type="List")')
+        lst.item(db_name).click_input()
+
 
 
     def set_networked_db(self, db_path):
-        textbox = self.window["Database on a networked computer"].window(control_type="Edit")
+        #textbox = self.cache.setdefault('self.window["Database on a networked computer"].window(control_type="Edit")', eval('self.window["Database on a networked computer"].window(control_type="Edit")'))
+        textbox = self.controls_cache('self.window["Database on a networked computer"].window(control_type="Edit")')
 
         textbox.set_edit_text(db_path)
 
 
-    def use_networked_db(self):
-        self.window["On the network"].click()
+    def use_networked_db(self) -> None:
+        #radio = self.cache.setdefault('self.window["On the network"]', self.window["On the network"])
+        radio = self.controls_cache('self.window["On the network"]')
+        radio.click()
 
 
-    def use_networked_db_radio_state(self):
-        radio = self.window["On the network"].click()
-
+    def use_networked_db_radio_state(self) -> bool:
+        #radio = self.cache.setdefault('self.window["On the network"]', self.window["On the network"])
+        radio = self.controls_cache('self.window["On the network"]')
         return radio.is_selected()
-
+    
 
     def use_local_db(self) -> None:
-        self.window["On this computer"].click()
+        #radio = self.cache.setdefault('self.window["On this computer"]', self.window["On this computer"])
+        radio = self.controls_cache('self.window["On this computer"]')
+        radio.click()
 
 
     def use_local_db_radio_state(self) -> bool:
-        return self.window["On this computer"].is_selected()
-                                 
+        #radio = self.cache.setdefault('self.window["On this computer"]', self.window["On this computer"])
+        radio = self.controls_cache('self.window["On this computer"]')
+        return radio.is_selected()
+                             
 
     def continue_to_login(self):
         if self.use_local_db_radio_state():
             self.window["Databases on this computer"].window(best_match="continue").click_input()
         else:
             self.window["Databases on a networked computer"].window(best_match="continue").click_input()
-        
+
         # POPIA Acknowledgement
         self.window.window(title_re="POPIA").window(best_match="I accept").click()
 
         login_window = self.window.window(title_re="User Login", control_type="Window")
         login_window.wait(wait_for="ready", timeout=15)
+
+
+    def create_controls_cache(self):
+        """
+        Cache the controls in the first widget of SA-SAMS.
+        This should make the Presenter more responsive and the view snappy.
+
+        The naming convention of the keys was strictly meant to make the transition easy
+        to verify in the absence of automated tests.
+        
+        It is for no other purpose.
+        """
+        cache = {}
+
+        self.use_local_db()
+
+        # pywinauto is lazy so we call WindowSpecification::wait() to force evaluation...
+        cache['self.window["Copy database before opening"]'] = self.window["Copy database before opening"].wait("ready")
+
+        cache['self.window["Databases on this computer"].window(control_type="List")'] = self.window["Databases on this computer"].window(control_type="List").wait("ready")
+
+        cache['self.window["On this computer"]'] = self.window["On this computer"].wait("ready")
+
+        self.use_networked_db()
+
+        cache['self.window["Database on a networked computer"].window(control_type="Edit")'] = self.window["Database on a networked computer"].window(control_type="Edit").wait("ready")
+
+        cache['self.window["On the network"]'] = self.window["On the network"].wait("ready")
+
+        return cache
+
+
+    def controls_cache(self, key: str):
+        return self.cache.setdefault(key, eval(key))
 
 
     def go_to_progress_report_widget(self):
@@ -303,6 +354,7 @@ class Presenter:
         self.window = window
 
         return app, window
+
 
     def get_years_list(self):
         year_combo_box = self.id_cb_map[ComboBoxControlId.YEAR.value]
