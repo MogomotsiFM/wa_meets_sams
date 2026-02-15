@@ -181,8 +181,7 @@ class Presenter:
 
     def last_used_networked_db(self):
         textbox = self.controls_cache('self.window["Database on a networked computer"].window(control_type="Edit")')
-        path = textbox.get_line(0)
-        return path
+        return textbox.get_value()
     
 
     def select_local_db(self, db_name):
