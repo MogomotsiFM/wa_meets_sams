@@ -153,6 +153,10 @@ class Presenter:
         parent.wait(wait_for="ready", timeout=30)
         parent.Done.click()
 
+
+    def exit_mainwindow(self):
+        self.window.Exit.click()
+
     
     def copy_db_before_opening(self, desired_copy_db_flag):
         actual_copy_db_flag = self.get_copy_db_checkbox_state()
