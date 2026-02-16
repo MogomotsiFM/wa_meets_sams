@@ -86,8 +86,8 @@ class Presenter:
         return labels
 
 
-    def _get_combo_boxes(self, window):
-        cbs = window.descendants(control_type="ComboBox")
+    def _get_combo_boxes(self):
+        cbs = self.window.descendants(control_type="ComboBox")
         id_combo_box_map = {cb.control_id(): cb for cb in cbs}
         
         return id_combo_box_map
@@ -290,7 +290,7 @@ class Presenter:
             self.window.EdusolSAMS.OK.click()
             
             if "success" in dlg_msg:
-                return LoginStatus.SUCCESS, ""
+                return LoginStatus.SUCCESS, dlg_msg
             else:
                 return LoginStatus.FAILURE, dlg_msg
         except Exception as exp:
@@ -313,7 +313,7 @@ class Presenter:
                 # many time. So, we failed, but can still try again.
                 return LoginStatus.FAILURE, login_failure_msg
             else:
-                return LoginStatus.FAILURE, login_lockout_msg
+                return LoginStatus.LOCKED_OUT, login_lockout_msg
 
 
     def _start(self, path):
