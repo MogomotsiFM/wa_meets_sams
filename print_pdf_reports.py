@@ -86,7 +86,7 @@ def process_learner(window, grade, room, report_format, report_file_path, report
 	window.window(best_match="Learners", control_type="Group").window(best_match="All", control_type="Button").click()
 
 	# Select report format
-	select_combo_box_option(report_format_combo_box, report_format)
+	#select_combo_box_option(report_format_combo_box, report_format)
 	
 	window.window(best_match="Language to print", control_type="Group").English.click()
 
