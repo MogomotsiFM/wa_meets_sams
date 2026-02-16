@@ -316,6 +316,12 @@ class Presenter:
                 return LoginStatus.LOCKED_OUT, login_lockout_msg
 
 
+    def cancel_login(self):
+        # PRE-CONDITON: The correct window is open
+        login_window = self.window.window(title_re="User Login", control_type="Window")
+        login_window.window(best_match="Exit", control_type="Button").click()
+        
+
     def _start(self, path):
         app_location = os.path.join(path, "EdusolSAMS.exe")
 
