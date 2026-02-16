@@ -1,12 +1,14 @@
 import sys
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QEvent
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget, QCheckBox, QMessageBox
 from PyQt5.QtWidgets import QLineEdit, QPushButton, QLabel, QListView, QGroupBox, QRadioButton, QFileDialog
 
+from Presenter import presenter
+
 class Login(QDialog):
-    def __init__(self, parent, presenter):
+    def __init__(self, parent, presenter: presenter.Presenter):
         super().__init__(parent)
 
         self.presenter = presenter
@@ -56,12 +58,59 @@ class Login(QDialog):
 
         self.setFixedSize(self.size())
 
+        self.initUI()
+
+
     def initUI(self):
-        pass
+        self.login_btn.clicked.connect(self.on_login_btn_clicked)
+        self.cancel_login_btn.clicked.connect(self.on_cancel_login_clicked)
+
+
+    def closeEvent(self, event):
+        self.presenter.cancel_login()
+
+        event.accept()
+
+
+    def on_cancel_login_clicked(self):
+        self.close()
+
+
+    def on_login_btn_clicked(self):
+        username = self.username_text.text()
+        password = self.password_text.text()
+
+        print("Username: ", username, "  Password: ", password)
+
+        status, msg = self.presenter.login(username, password)
+
+        print("Login message: ", msg)
+
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Login update")
+        msg_box.setText(msg)
+        
+        match status:
+            case presenter.LoginStatus.SUCCESS:
+                msg_box.setIcon(QMessageBox.Icon.Information)
+            case presenter.LoginStatus.FAILURE:
+                msg_box.setIcon(QMessageBox.Icon.Warning)
+            case _:
+                msg_box.setIcon(QMessageBox.Icon.Critical)
+
+        x = msg_box.exec_()
+
+        print("Message: ", msg, "  Return value: ", x)
+        if status == presenter.LoginStatus.SUCCESS:
+            self.accept()
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = Login(None, "Presenter")
+
+    # We have not tested creating the Presenter here!!!!
+    presenter_ = presenter.Presenter("path")
+
+    window = Login(None, presenter_)
     window.show()
     sys.exit(app.exec_())
