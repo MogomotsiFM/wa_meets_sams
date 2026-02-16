@@ -2,8 +2,8 @@ import os
 import sys
 
 from PyQt5.QtCore import Qt, QEvent
-from PyQt5.QtWidgets import QApplication, QMainWindow
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget, QCheckBox, QListWidget
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QMessageBox, QStackedWidget, QCheckBox, QListWidget
 from PyQt5.QtWidgets import QLineEdit, QPushButton, QLabel, QListView, QGroupBox, QRadioButton, QFileDialog
 
 from .login import Login
@@ -12,7 +12,7 @@ from .options import Config
 from Presenter.presenter import Presenter
 
 class MainWindow(QMainWindow):
-    def __init__(self, presenter_):
+    def __init__(self, presenter_: Presenter):
         super().__init__()
 
         self.presenter = presenter_
@@ -216,7 +216,10 @@ class MainWindow(QMainWindow):
         
         login = Login(self, self.presenter)
 
-        login.exec_()
+        # Return 1 if the dialog was closed with OK. return 0 otherwise.
+        if login.exec_():
+            self.presenter.go_to_progress_report_widget()
+
 
 
 def main():
