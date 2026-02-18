@@ -39,6 +39,12 @@ class ComboBoxControlId(Enum):
 	PHASE  = 60 # FET or Senior
 	FORMAT = 40 # Report format
 
+
+# Type definition
+from typing import TypeAlias
+Key: TypeAlias = Literal["years", "grades", "rooms", "cycles", "formats"]
+
+
 class Presenter:
     # Cache the selected grade
     grade = None
@@ -46,11 +52,11 @@ class Presenter:
     id_cb_map: dict[int, ComboBoxWrapper] = {}
     cache = {}
     # When we click "Print reports" this parameter should contain all our choices
-    combo_box_lists: dict[Literal["years", "grades", "cycles", "formats"], str] = {}
+    config: dict[Literal["years", "grades", "rooms", "cycles", "formats"], str] = {}
     # This is used to help with managing the combo_box_list cache and reseting the choices.
     # The idea is that if the grade is changed then the rooms, cycles, and formats must be changed
     # We keep this list to keep that order
-    controls = ["years", "grades", "rooms", "cycles", "formats"]
+    controls: list[Key] = ["years", "grades", "rooms", "cycles", "formats"]
     
 
     def __init__(self, app_path):
@@ -106,13 +112,27 @@ class Presenter:
     # If you set the grade then you have to set the room, cycle, and maybe format
     # If you then reset the grade then you have to set these values again
     def _reset_config_options(self, key:Literal["years", "grades", "rooms", "cycles", "formats"]):
+        print("Here")
         settings = takewhile(lambda k: k!=key, reversed(self.controls))
+        print("\n\n", key, "     To be reset: ", list(settings))
+        #settings = dropwhile(lambda k: k!=key, reversed(self.controls))
+        #self.config = {k: self.config[k] for k in settings}
         for s in settings:
-            self.combo_box_lists.pop(s, None)
+            t = self.config.pop(s, "")
+            print(t, end=" , ")
 
 
-    def _set_config_options(self):
-        pass
+    def _set_config_options(self, key:Literal["grades", "rooms", "cycles", "formats"], value):
+        self.config[key] = value
+
+        self._reset_config_options(key)
+
+    
+    def print_reports_config(self):
+        """
+        Returns the configuration required to start printing the reports to PDF.
+        """
+        return self.config
 
 
     def process_room(self, grade, room, report_file_path):
@@ -405,6 +425,8 @@ class Presenter:
 
         self.select_combo_box_option(year_combo_box, value=year)
 
+        self._set_config_options("years", year)
+
     
     def get_grades_list(self):
         grade_combo_box = self.id_cb_map[ComboBoxControlId.GRADE.value]
@@ -418,13 +440,15 @@ class Presenter:
         grade_combo_box = self.id_cb_map[ComboBoxControlId.GRADE.value]
         self.select_combo_box_option(grade_combo_box, value=desired_grade)
 
-        self.grade = desired_grade
+        self._set_config_options("grades", desired_grade)
+        #self.grade = desired_grade
 
 
     def get_selected_grade(self):
         #grade_combo_box = self.id_cb_map[ComboBoxControlId.GRADE.value]
         #return grade_combo_box.selected_text()
-        return self.grade
+        return self.config["grades"]
+        #return self.grade
     
 
     def get_rooms_list(self):
@@ -448,6 +472,8 @@ class Presenter:
         
             self.select_combo_box_option(room_combo_box, value=desired_room)
 
+        self._set_config_options("rooms", desired_room)
+
 
     def get_report_cycles(self):
         cycle_combo_box = self.id_cb_map[ComboBoxControlId.CYCLE.value]
@@ -459,22 +485,25 @@ class Presenter:
         cycle_combo_box = self.id_cb_map[ComboBoxControlId.CYCLE.value]
         self.select_combo_box_option(cycle_combo_box, value=desired_cycle)
 
+        self._set_config_options("cycles", desired_cycle)
+
         # We cannot select the format unless we first click the GO button
         # to retrieve the list of learners
         # In our case it is possible there are no students in a class/grade.
         # But, in a real school this may not happen unless ...
+        self.window.window(best_match="Select options", control_type="Group").window(best_match="GO", control_type="Button").click()
         try:
-            self.window.window(best_match="Select options", control_type="Group").window(best_match="GO", control_type="Button").click()
-
+            print("\n\nIn here\n\n")
             parent = self.window.window(best_match="Print progress reports", control_type="Window")
-            parent = self.window.window(parent=parent, best_match="User message", control_type="Window").wait("ready", timeout=1)
-            msgs = parent.window(parent=parent, control_type="Edit").texts()
-            button = parent.OK
-            button.click()
+            parent = parent.window(best_match="User Message", control_type="Window")
+            parent.wait(wait_for="ready", timeout=1)
+            msgs = parent.window(control_type="Text").texts()
+            parent.OK.click()
 
             # We failed because we found a popup dialog with an error message
             return False, msgs[0]
-        except:
+        except Exception as exp:
+            print("Dialog not found")
             return True, ""
 
 
@@ -486,6 +515,8 @@ class Presenter:
     def select_report_format(self, desired_format):
         format_combo_box = self.id_cb_map[ComboBoxControlId.FORMAT.value]
         self.select_combo_box_option(format_combo_box, value=desired_format)
+
+        self._set_config_options("formats", desired_format)
 
 
     def is_running(self):
