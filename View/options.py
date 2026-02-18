@@ -115,15 +115,16 @@ class Config(QDialog):
 
         self.initUI()
 
-        self.sync()
-
-        self.controls = [self.grades, self.rooms, self.cycles, self.formats]
-
+        # 
+        self.controls = [self.years, self.grades, self.rooms, self.cycles, self.formats]
         self.reset(self.years)
+
+        self.sync()
 
 
     def initUI(self):
         self.years.activated.connect(self.on_year_selected)
+        self.years.currentIndexChanged.connect(self.on_year_selected)
         self.grades.activated.connect(self.on_grade_selected)
         self.rooms.activated.connect(self.on_room_selected)
         self.cycles.activated.connect(self.on_cycle_selected)
@@ -137,10 +138,12 @@ class Config(QDialog):
         self.grades.setCurrentIndex(0)
 
 
-    def reset(self, start):
+    def reset(self, start: QComboBox):
         cs = takewhile(lambda c: c != start, reversed(self.controls))
         for c in cs:
             c.setCurrentText(c.placeholderText())
+            c.setEnabled(False)
+        start.setEnabled(True)
         self.send_reports_btn.setEnabled(False)
 
 
@@ -148,7 +151,12 @@ class Config(QDialog):
         year = self.years.currentText()
         self.presenter.select_year(year)
 
+        grades = self.presenter.get_grades_list()
+        self.grades.clear()
+        self.grades.addItems(grades)
+
         self.reset(self.years)
+        self.grades.setEnabled(True)
 
 
     def on_grade_selected(self):
@@ -160,6 +168,7 @@ class Config(QDialog):
         self.rooms.addItems(rooms)
 
         self.reset(self.grades)
+        self.rooms.setEnabled(True)
 
 
     def on_room_selected(self):
@@ -171,18 +180,26 @@ class Config(QDialog):
         self.cycles.addItems(cycles)
 
         self.reset(self.rooms)
+        self.cycles.setEnabled(True)
 
 
     def on_cycle_selected(self):
         cycle = self.cycles.currentText()
-        self.presenter.select_report_cycle(cycle)
+        is_successful, msg = self.presenter.select_report_cycle(cycle)
 
-        formats = self.presenter.get_report_formats()
-        print("Report formats: ", formats)
-        self.formats.clear()
-        self.formats.addItems(formats)
+        if is_successful:
+            formats = self.presenter.get_report_formats()
+            print("Report formats: ", formats)
+            self.formats.clear()
+            self.formats.addItems(formats)
 
-        self.reset(self.cycles)
+            self.reset(self.cycles)
+            self.formats.setEnabled(True)
+        else:
+            # Open a dialog to surface the error to the user
+            print("Error: ", msg)
+
+            self.reset(self.years)
 
 
     def on_format_selected(self):
