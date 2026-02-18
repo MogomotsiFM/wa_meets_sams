@@ -149,14 +149,25 @@ class Config(QDialog):
 
     def on_year_selected(self):
         year = self.years.currentText()
-        self.presenter.select_year(year)
+        is_successful, msg = self.presenter.select_year(year)
 
-        grades = self.presenter.get_grades_list()
-        self.grades.clear()
-        self.grades.addItems(grades)
+        if is_successful:
+            grades = self.presenter.get_grades_list()
+            self.grades.clear()
+            self.grades.addItems(grades)
 
-        self.reset(self.years)
-        self.grades.setEnabled(True)
+            self.reset(self.years)
+            self.grades.setEnabled(True)
+        else:
+            # Open a dialog to surface the error to the user
+            msg = msg.capitalize()
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Configuration update")
+            msg_box.setText(msg)
+
+            x = msg_box.exec_()
+
+            self.reset(self.years)
 
 
     def on_grade_selected(self):
