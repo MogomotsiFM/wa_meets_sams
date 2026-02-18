@@ -2,7 +2,7 @@ import os
 import sys
 
 from PyQt5.QtCore import Qt, QEvent, QThread
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QStackedLayout
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QMessageBox, QStackedWidget, QCheckBox, QListWidget
 from PyQt5.QtWidgets import QLineEdit, QPushButton, QLabel, QListView, QGroupBox, QRadioButton, QFileDialog
 
@@ -81,7 +81,7 @@ class MainWindow(QMainWindow):
         
         self.browse_btn = QPushButton(text="Browse...")
         self.network_continue_btn = QPushButton(text="Continue")
-        #self.network_continue_btn.setEnabled(False)
+        self.network_continue_btn.setEnabled(False)
 
         hlayout = QHBoxLayout()
         hlayout.addWidget(self.network_db_path)
@@ -213,21 +213,49 @@ class MainWindow(QMainWindow):
         self.presenter.copy_db_before_opening(int(desired_state))
 
 
+    def go_to_progress_report_widget(self):
+        self.presenter.go_to_progress_report_widget()
+
+        worker_thread = ReportPrinter(self.presenter)
+        config = Config(self, self.presenter, worker_thread)
+
+        x = config.exec_()
+        # Returns 0 if the config dialog was cancelled.
+        if x:
+            # Open a progress tracking widget
+            pass
+        else: #
+            self.disable_controls()
+
+
+    def disable_controls(self):
+        self.local_continue_login_btn.disconnect()
+        self.local_continue_login_btn.clicked.connect(self.go_to_progress_report_widget)
+
+        self.network_continue_btn.disconnect()
+        self.network_continue_btn.clicked.connect(self.go_to_progress_report_widget)
+
+        self.local_db_radio.setEnabled(False)
+        self.network_db_radio.setEnabled(False)
+
+        # self.local_db_widget.setEnabled(False)
+        self.copy_local_db_checkbox.setEnabled(False)
+        self.local_db_list.setEnabled(False)
+
+        # self.network_db_widget.setEnabled(False)
+        self.browse_btn.setEnabled(False)
+
+
     def on_continue_btn_clicked(self):
         self.presenter.continue_to_login()
         
         login = Login(self, self.presenter)
 
-        # Return 1 if the dialog was closed with OK. return 0 otherwise.
+        # Returns 1 if the dialog was closed with OK. Returns 0 otherwise.
         if login.exec_():
-            # TODO: Do this in a thread??
-            self.presenter.go_to_progress_report_widget()  
+            self.go_to_progress_report_widget()
 
-            worker_thread = ReportPrinter(self.presenter)
-            config = Config(self, self.presenter, worker_thread)
-
-            config.exec_()
-
+            
 
 
 def main():
