@@ -1,15 +1,16 @@
 import os
 import sys
 
-from PyQt5.QtCore import Qt, QEvent
+from PyQt5.QtCore import Qt, QEvent, QThread
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QMessageBox, QStackedWidget, QCheckBox, QListWidget
 from PyQt5.QtWidgets import QLineEdit, QPushButton, QLabel, QListView, QGroupBox, QRadioButton, QFileDialog
 
 from .login import Login
 from .options import Config
-
+from .report_printer import ReportPrinter
 from Presenter.presenter import Presenter
+
 
 class MainWindow(QMainWindow):
     def __init__(self, presenter_: Presenter):
@@ -145,7 +146,8 @@ class MainWindow(QMainWindow):
 
 
     def closeEvent(self, event):
-        self.presenter.exit_mainwindow()
+        if self.presenter.is_running():
+            self.presenter.exit_mainwindow()
 
         event.accept()
 
@@ -218,7 +220,13 @@ class MainWindow(QMainWindow):
 
         # Return 1 if the dialog was closed with OK. return 0 otherwise.
         if login.exec_():
-            self.presenter.go_to_progress_report_widget()
+            # TODO: Do this in a thread??
+            self.presenter.go_to_progress_report_widget()  
+
+            worker_thread = ReportPrinter(self.presenter)
+            config = Config(self, self.presenter, worker_thread)
+
+            config.exec_()
 
 
 
