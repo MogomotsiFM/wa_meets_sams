@@ -427,6 +427,21 @@ class Presenter:
 
         self._set_config_options("years", year)
 
+        # Do we have a popup error message
+        try:
+            print("\n\nIn here\n\n")
+            parent = self.window.window(best_match="Print progress reports", control_type="Window")
+            parent = parent.window(best_match="User Message", control_type="Window")
+            parent.wait(wait_for="ready")
+            msgs = parent.window(control_type="Text").texts()
+            parent.OK.click()
+
+            # We failed because we found a popup dialog with an error message
+            return False, msgs[0]
+        except Exception as exp:
+            print("Dialog not found")
+            return True, ""
+
     
     def get_grades_list(self):
         grade_combo_box = self.id_cb_map[ComboBoxControlId.GRADE.value]
