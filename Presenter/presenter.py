@@ -2,6 +2,10 @@ import os
 import time
 import datetime
 
+from itertools import takewhile
+
+from collections import deque
+
 from enum import Enum
 from functools import reduce
 from dataclasses import dataclass
@@ -36,17 +40,27 @@ class ComboBoxControlId(Enum):
 	FORMAT = 40 # Report format
 
 class Presenter:
+    # Cache the selected grade
+    grade = None
+
+    id_cb_map: dict[int, ComboBoxWrapper] = {}
+    cache = {}
+    # When we click "Print reports" this parameter should contain all our choices
+    combo_box_lists: dict[Literal["years", "grades", "cycles", "formats"], str] = {}
+    # This is used to help with managing the combo_box_list cache and reseting the choices.
+    # The idea is that if the grade is changed then the rooms, cycles, and formats must be changed
+    # We keep this list to keep that order
+    controls = ["years", "grades", "rooms", "cycles", "formats"]
+    
+
     def __init__(self, app_path):
         report_folder = "Reports"
         date = f"{datetime.datetime.now()}"
         date = date.replace(":", "T")
-        self.cover_path = os.path.join(app_path, report_folder, date, "covers")
+        self.cover_pg_path = os.path.join(app_path, report_folder, date, "covers")
         self.report_path = os.path.join(app_path, report_folder, date, "reports")
-        os.makedirs(name=self.cover_path, exist_ok=True)
+        os.makedirs(name=self.cover_pg_path, exist_ok=True)
         os.makedirs(name=self.report_path, exist_ok=True)
-
-        self.id_cb_map = {}
-        self.cache = {}
 
         self.app, self.window = self._start(app_path)
 
@@ -62,38 +76,46 @@ class Presenter:
         :param combo_box: The combo box object of interest
         :param value: The option in the combo box that we want to select
         """
-
         combo_box = combo_box.expand()
         kids = combo_box.children(control_type="List")
-        print("\n\nKids:", value)
         for k in kids:
             print(k.texts())
         kids[0].item(value).invoke()
 
 
-    def get_combo_box_options(self, options_combo: ComboBoxWrapper) -> list[str]:
+    def get_combo_box_options(self, options_combo: ComboBoxWrapper, key: str) -> list[str]:
         """
         Returns the list of options available from the combo box.
         These options are then forwarded to the GUI so that the user may select one of them.
         
         :param combo_box: The combo box object of interest
         """
-        
         options_combo = options_combo.expand()
         kids = options_combo.children(control_type="List")
         labels = [k for ks in kids[0].texts() for k in ks]
         options_combo.collapse()
+
         return labels
 
 
     def _get_combo_boxes(self):
         cbs = self.window.descendants(control_type="ComboBox")
         id_combo_box_map = {cb.control_id(): cb for cb in cbs}
-        
         return id_combo_box_map
 
+    # If you set the grade then you have to set the room, cycle, and maybe format
+    # If you then reset the grade then you have to set these values again
+    def _reset_config_options(self, key:Literal["years", "grades", "rooms", "cycles", "formats"]):
+        settings = takewhile(lambda k: k!=key, reversed(self.controls))
+        for s in settings:
+            self.combo_box_lists.pop(s, None)
 
-    def process_learner(self, grade, room, report_format, report_file_path):
+
+    def _set_config_options(self):
+        pass
+
+
+    def process_room(self, grade, room, report_file_path):
         """
         Prints the report of one learner to file
 
@@ -154,10 +176,22 @@ class Presenter:
         parent.Done.click()
 
 
+    def report_printing_done(self):
+        parent = self.window.window(best_match="Print progress reports", control_type="Window")
+        parent.Done.click()
+
+
     def exit_mainwindow(self):
         self.window.Exit.click()
 
     
+    def home(self):
+        # Navigate from the Print reports window to the home window
+        self.window.window(best_match="Curriculum module menu", control_type="Button").click()
+
+        self.window.window(best_match="Main menu", control_type="Button").click()
+
+
     def copy_db_before_opening(self, desired_copy_db_flag):
         actual_copy_db_flag = self.get_copy_db_checkbox_state()
         if desired_copy_db_flag != actual_copy_db_flag:
@@ -258,14 +292,19 @@ class Presenter:
         return cache
 
 
-    def controls_cache(self, key: str):
-        return self.cache.setdefault(key, eval(key))
+    def controls_cache(self, key: str):#, timeout=2):
+        try:
+            return self.cache[key]
+        except:
+            self.cache[key] = eval(f"{key}.wait('ready', timeout=20)")
+            return self.cache[key]
 
 
     def go_to_progress_report_widget(self):
         # Navigate to the school reports configuration tab
-        self.window.window(best_match="Curriculum Related Data").wait("ready", timeout=20)
-        self.window.window(best_match="Curriculum Related Data").click()
+        home = self.controls_cache('self.window.window(best_match="Curriculum Related Data")')
+        #self.window.window(best_match="Curriculum Related Data").click()
+        home.click()
         self.window.window(best_match="Print Learner Progress Reports").click()
         # The following is deliberate
         self.window.window(best_match="Print Learner Progress Reports").click()
@@ -357,7 +396,7 @@ class Presenter:
     def get_years_list(self):
         year_combo_box = self.id_cb_map[ComboBoxControlId.YEAR.value]
         year_combo_box.draw_outline()
-        years = self.get_combo_box_options(year_combo_box)
+        years = self.get_combo_box_options(year_combo_box, "years")
         return years
     
 
@@ -370,58 +409,50 @@ class Presenter:
     def get_grades_list(self):
         grade_combo_box = self.id_cb_map[ComboBoxControlId.GRADE.value]
         grade_combo_box.draw_outline()
-        grades = self.get_combo_box_options(grade_combo_box)
+        grades = self.get_combo_box_options(grade_combo_box, "grades")
 
         return grades
     
 
-    def select_grade(self, desired_grade):# -> tuple[list[str], list[str]]:
-        """
-        The return value is used to update the View
-        Returns: A list of grades, A list of cycles
-        """
+    def select_grade(self, desired_grade):
         grade_combo_box = self.id_cb_map[ComboBoxControlId.GRADE.value]
         self.select_combo_box_option(grade_combo_box, value=desired_grade)
 
-        #cycles = self.get_report_cycles()
-
-        #if "All" in desired_grade:
-        #    return ["All"], cycles
-        #else:
-        #    return self.get_rooms_list(), cycles
+        self.grade = desired_grade
 
 
-    def get_rooms_list(self, grade=None):
-        # Strictly speaking, we do not have to set the grade.
-        # It should be enough to state the precondition that the grade should be set.
-        if grade:
-            self.select_grade(grade)
+    def get_selected_grade(self):
+        #grade_combo_box = self.id_cb_map[ComboBoxControlId.GRADE.value]
+        #return grade_combo_box.selected_text()
+        return self.grade
+    
+
+    def get_rooms_list(self):
+        grade = self.get_selected_grade()
 
         if "All" in grade:
             return ["All"]
         else:
             room_combo_box = self.id_cb_map[ComboBoxControlId.ROOM.value]
             room_combo_box.draw_outline()
-            rooms = self.get_combo_box_options(room_combo_box)
+            rooms = self.get_combo_box_options(room_combo_box, "rooms")
 
             return rooms
     
 
     def select_room(self, desired_room):
-        room_combo_box = self.id_cb_map[ComboBoxControlId.ROOM.value]
+        grade = self.get_selected_grade()
+        print("Selected grade: ", grade)
+        if "All" not in grade:
+            room_combo_box = self.id_cb_map[ComboBoxControlId.ROOM.value]
         
-        self.select_combo_box_option(room_combo_box, value=desired_room)
+            self.select_combo_box_option(room_combo_box, value=desired_room)
 
 
-    def get_report_cycles(self, grade=None):
-        # Again, strictly speaking, we do not have to set the grade.
-        # It should be enough to state the PRE-CONDITION that the grade should be set.
-        if grade:
-            self.select_grade(grade)
-
+    def get_report_cycles(self):
         cycle_combo_box = self.id_cb_map[ComboBoxControlId.CYCLE.value]
         cycle_combo_box.draw_outline()
-        return self.get_combo_box_options(cycle_combo_box)
+        return self.get_combo_box_options(cycle_combo_box, "reports")
 
 
     def select_report_cycle(self, desired_cycle):
@@ -430,40 +461,35 @@ class Presenter:
 
         # We cannot select the format unless we first click the GO button
         # to retrieve the list of learners
-        self.window.GO.click()
+        # In our case it is possible there are no students in a class/grade.
+        # But, in a real school this may not happen unless ...
+        try:
+            self.window.window(best_match="Select options", control_type="Group").window(best_match="GO", control_type="Button").click()
 
-        return self.get_report_formats()
+            parent = self.window.window(best_match="Print progress reports", control_type="Window")
+            parent = self.window.window(parent=parent, best_match="User message", control_type="Window").wait("ready", timeout=1)
+            msgs = parent.window(parent=parent, control_type="Edit").texts()
+            button = parent.OK
+            button.click()
+
+            # We failed because we found a popup dialog with an error message
+            return False, msgs[0]
+        except:
+            return True, ""
 
 
-    def get_report_formats(self, grade=None, cycle=None):
-        if grade:
-            self.select_grade(grade)
-        if cycle:
-            self.select_report_cycle(cycle)
-        
-        # We cannot select the format unless we first click the GO button
-        # to retrieve the list of learners
-        self.window.GO.click()
-
+    def get_report_formats(self):
         format_combo_box = self.id_cb_map[ComboBoxControlId.FORMAT.value]
-        return self.get_combo_box_options(format_combo_box)
-
-
-    def select_report_format(self, desired_format, cycle=None, room=None, grade=None, /):
-        if grade:
-            self.select_grade(grade)
-        if room:
-            self.select_room(room)
-        if cycle:
-            self.select_report_cycle(cycle)
+        return self.get_combo_box_options(format_combo_box, "formats")
         
-        # We cannot select the format unless we first click the GO button
-        # to retrieve the list of learners
-        if grade or room or cycle:
-            self.window.GO.click()
 
+    def select_report_format(self, desired_format):
         format_combo_box = self.id_cb_map[ComboBoxControlId.FORMAT.value]
         self.select_combo_box_option(format_combo_box, value=desired_format)
+
+
+    def is_running(self):
+        return self.app.is_process_running()
 
 
     def run(self, grade: str, room: str, cycle:str, format: str):
@@ -478,9 +504,10 @@ class Presenter:
         
         for grade in grades:
             self.select_grade(grade)
-
+            
             if "All" in desired_grade or "All" in desired_room:
-                rooms = self.get_rooms_list()
+                rms = self.get_rooms_list()
+                rooms = [rm for rm in rms if "All" not in rm]
             else:
                 rooms = [desired_room]
 
@@ -489,12 +516,16 @@ class Presenter:
 
                 cycles = self.get_report_cycles()
                 cycle_ = [c for c in cycles if desired_cycle in c]
-                self.select_report_cycle(cycle_[0])
+                is_successful, msg = self.select_report_cycle(cycle_[0])
 
-                self.select_report_format(format, cycle_, room, grade)
+                if is_successful:
+                    self.select_report_format(format)
 
-                # Print one PDF with reports for all the learners in a class(grade + room).
-                #progress_report_window = self.window.window(best_match="Print progress reports", control_type="Window")
-                #self.process_learner(progress_report_window, grade, room, format, self.report_path, format_combo_box)
-                self.process_learner(grade, room, format, self.report_path)
+                    self.process_room(grade, room, self.report_path)
+                else:
+                    print("Swallowed error: ", msg)
+
+        cb = self.id_cb_map[ComboBoxControlId.PHASE.value]
+        self.print_cover_page(cb, "FET", self.cover_pg_path)
+        self.print_cover_page(cb, "Senior", self.cover_pg_path)
 
