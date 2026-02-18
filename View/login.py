@@ -16,7 +16,7 @@ class Login(QDialog):
         self.setStyleSheet("font: 75 12pt Arial;")
 
         self.setWindowTitle("Login")
-        self.setGeometry(400, 150, 450, 115)
+        self.setGeometry(400, 150, 300, 115)
 
         main_layout = QVBoxLayout()
         #self.central_widget.setLayout(main_layout)
