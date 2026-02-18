@@ -3,7 +3,7 @@ import sys
 from itertools import takewhile
 
 from PyQt5.QtCore import Qt, QThread
-from PyQt5.QtWidgets import QApplication, QDialog
+from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox
 from PyQt5.QtWidgets import QPushButton, QLabel
 
@@ -197,7 +197,12 @@ class Config(QDialog):
             self.formats.setEnabled(True)
         else:
             # Open a dialog to surface the error to the user
-            print("Error: ", msg)
+            msg = msg.capitalize()
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Configuration update")
+            msg_box.setText(msg)
+
+            x = msg_box.exec_()
 
             self.reset(self.years)
 
