@@ -5,10 +5,12 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget, QCheckBox, QMessageBox
 from PyQt5.QtWidgets import QLineEdit, QPushButton, QLabel, QListView, QGroupBox, QRadioButton, QFileDialog
 
-from Presenter import presenter
+from Presenter.presenter import Presenter, LoginStatus
+
+from Common.busy_spinner import busy_spinner
 
 class Login(QDialog):
-    def __init__(self, parent, presenter: presenter.Presenter):
+    def __init__(self, parent, presenter: Presenter):
         super().__init__(parent)
 
         self.presenter = presenter
@@ -78,7 +80,8 @@ class Login(QDialog):
         self.close()
 
 
-    def on_login_btn_clicked(self):
+    @busy_spinner
+    def on_login_btn_clicked(self, btn_status):
         username = self.username_text.text()
         password = self.password_text.text()
 
@@ -93,9 +96,9 @@ class Login(QDialog):
         msg_box.setText(msg)
         
         match status:
-            case presenter.LoginStatus.SUCCESS:
+            case LoginStatus.SUCCESS:
                 msg_box.setIcon(QMessageBox.Icon.Information)
-            case presenter.LoginStatus.FAILURE:
+            case LoginStatus.FAILURE:
                 msg_box.setIcon(QMessageBox.Icon.Warning)
             case _:
                 msg_box.setIcon(QMessageBox.Icon.Critical)
@@ -103,7 +106,7 @@ class Login(QDialog):
         x = msg_box.exec_()
 
         print("Message: ", msg, "  Return value: ", x)
-        if status == presenter.LoginStatus.SUCCESS:
+        if status == LoginStatus.SUCCESS:
             self.accept()
 
 
@@ -111,7 +114,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     # We have not tested creating the Presenter here!!!!
-    presenter_ = presenter.Presenter("path")
+    presenter_ = Presenter("path")
 
     window = Login(None, presenter_)
     window.show()
