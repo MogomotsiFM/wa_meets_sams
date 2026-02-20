@@ -222,8 +222,7 @@ class MainWindow(QMainWindow):
         self.presenter.copy_db_before_opening(int(desired_state))
 
 
-    def go_to_progress_report_widget(self):
-        self.presenter.go_to_progress_report_widget()
+    def configure_report_printer(self):
 
         config = Config(self, self.presenter)
 
@@ -235,24 +234,17 @@ class MainWindow(QMainWindow):
 
             x = pr.exec_()
             if x == QDialog.DialogCode.Rejected:
-                self.go_home()
                 self.disable_controls()
         else: #
-            self.go_home()
             self.disable_controls()
-
-
-    def go_home(self):
-        self.presenter.report_printing_done()
-        self.presenter.home()
 
 
     def disable_controls(self):
         self.local_continue_login_btn.disconnect()
-        self.local_continue_login_btn.clicked.connect(self.go_to_progress_report_widget)
+        self.local_continue_login_btn.clicked.connect(self.configure_report_printer)
 
         self.network_continue_btn.disconnect()
-        self.network_continue_btn.clicked.connect(self.go_to_progress_report_widget)
+        self.network_continue_btn.clicked.connect(self.configure_report_printer)
 
         self.local_db_radio.setEnabled(False)
         self.network_db_radio.setEnabled(False)
@@ -272,7 +264,9 @@ class MainWindow(QMainWindow):
 
         # Returns 1 if the dialog was closed with OK. Returns 0 otherwise.
         if login.exec_() == QDialog.DialogCode.Accepted:
-            self.go_to_progress_report_widget()
+            self.presenter.go_to_progress_report_widget()
+
+            self.configure_report_printer()
 
 
 def main():
