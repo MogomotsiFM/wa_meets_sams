@@ -8,15 +8,19 @@ from PyQt5.QtWidgets import QLineEdit, QPushButton, QLabel, QListView, QGroupBox
 
 from .login import Login
 from .options import Config
-from .report_printer import ReportPrinter
+from .progress_tracker import ProgressReport
+
+from Common.report_printer import ReportPrinter
+
 from Presenter.presenter import Presenter
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, presenter_: Presenter):
+    def __init__(self, presenter_: Presenter, report_printer: ReportPrinter):
         super().__init__()
 
         self.presenter = presenter_
+        self.report_printer = report_printer
 
         self.setStyleSheet("font: 75 12pt Arial;")
 
@@ -113,8 +117,6 @@ class MainWindow(QMainWindow):
 
         self.initUI()
 
-        self.sync()
-
 
     def initUI(self):
         self.network_db_radio.clicked.connect(self.on_network_radio_clicked)
@@ -143,6 +145,13 @@ class MainWindow(QMainWindow):
             self.local_db_radio.click()
         else:
             self.network_db_radio.click()
+
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Window is now shown and ready
+
+        self.sync()
 
 
     def closeEvent(self, event):
@@ -216,16 +225,26 @@ class MainWindow(QMainWindow):
     def go_to_progress_report_widget(self):
         self.presenter.go_to_progress_report_widget()
 
-        worker_thread = ReportPrinter(self.presenter)
-        config = Config(self, self.presenter, worker_thread)
+        config = Config(self, self.presenter)
 
         x = config.exec_()
         # Returns 0 if the config dialog was cancelled.
-        if x:
+        if x == QDialog.DialogCode.Accepted:
             # Open a progress tracking widget
-            pass
+            pr = ProgressReport(self, self.presenter, self.report_printer)
+
+            x = pr.exec_()
+            if x == QDialog.DialogCode.Rejected:
+                self.go_home()
+                self.disable_controls()
         else: #
+            self.go_home()
             self.disable_controls()
+
+
+    def go_home(self):
+        self.presenter.report_printing_done()
+        self.presenter.home()
 
 
     def disable_controls(self):
@@ -252,10 +271,8 @@ class MainWindow(QMainWindow):
         login = Login(self, self.presenter)
 
         # Returns 1 if the dialog was closed with OK. Returns 0 otherwise.
-        if login.exec_():
+        if login.exec_() == QDialog.DialogCode.Accepted:
             self.go_to_progress_report_widget()
-
-            
 
 
 def main():

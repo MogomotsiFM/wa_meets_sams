@@ -1,6 +1,7 @@
 import os
 import time
 import datetime
+import logging
 
 from itertools import takewhile
 
@@ -12,7 +13,7 @@ from dataclasses import dataclass
 
 import warnings
 #warnings.simplefilter("ignore", UserWarning)
-warnings.filterwarnings("ignore")
+#warnings.filterwarnings("ignore")
 
 import pywinauto
 
@@ -38,7 +39,6 @@ class ComboBoxControlId(Enum):
 	CYCLE  = 72 # Term 1, 2, 3, or 4
 	PHASE  = 60 # FET or Senior
 	FORMAT = 40 # Report format
-
 
 # Type definition
 from typing import TypeAlias
@@ -161,6 +161,7 @@ class Presenter:
 
 
     def print_cover_page(self, combo_box: ComboBoxWrapper, phase: Literal["FET", "Senior"], report_path: str):
+        logging.getLogger().info(f"Printing the {phase} cover page to PDF")
         self.select_combo_box_option(combo_box, phase)
 
         filename = f"{phase}_report_cover"
@@ -429,7 +430,6 @@ class Presenter:
 
         # Do we have a popup error message
         try:
-            print("\n\nIn here\n\n")
             parent = self.window.window(best_match="Print progress reports", control_type="Window")
             parent = parent.window(best_match="User Message", control_type="Window")
             parent.wait(wait_for="ready")
@@ -508,17 +508,17 @@ class Presenter:
         # But, in a real school this may not happen unless ...
         self.window.window(best_match="Select options", control_type="Group").window(best_match="GO", control_type="Button").click()
         try:
-            print("\n\nIn here\n\n")
             parent = self.window.window(best_match="Print progress reports", control_type="Window")
             parent = parent.window(best_match="User Message", control_type="Window")
             parent.wait(wait_for="ready", timeout=1)
             msgs = parent.window(control_type="Text").texts()
             parent.OK.click()
 
+            logging.getLogger().warning(msgs[0])
+
             # We failed because we found a popup dialog with an error message
             return False, msgs[0]
         except Exception as exp:
-            print("Dialog not found")
             return True, ""
 
 
@@ -558,6 +558,8 @@ class Presenter:
                 rooms = [desired_room]
 
             for room in rooms:
+                logging.getLogger().info(f"Writing report dossier for Grade {room} to file.")
+
                 self.select_room(room)
 
                 cycles = self.get_report_cycles()
