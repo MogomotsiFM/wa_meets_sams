@@ -7,6 +7,8 @@ from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QComboBox
 from PyQt5.QtWidgets import QPushButton, QLabel
 
+from Common.busy_spinner import busy_spinner
+
 from Presenter.presenter import Presenter
 
 
@@ -124,7 +126,6 @@ class Config(QDialog):
         self.years.activated.connect(self.on_year_selected)
         self.years.currentIndexChanged.connect(self.on_year_selected)
         self.grades.activated.connect(self.on_grade_selected)
-        #self.grades.currentIndexChanged.connect(self.on_grade_selected)
         self.rooms.activated.connect(self.on_room_selected)
         self.cycles.activated.connect(self.on_cycle_selected)
         self.formats.activated.connect(self.on_format_selected)
@@ -153,7 +154,8 @@ class Config(QDialog):
         self.send_reports_btn.setEnabled(False)
 
 
-    def on_year_selected(self):
+    @busy_spinner
+    def on_year_selected(self, current_index):
         year = self.years.currentText()
         is_successful, msg = self.presenter.select_year(year)
 
@@ -174,7 +176,8 @@ class Config(QDialog):
         self.grades.setEnabled(True)
 
 
-    def on_grade_selected(self):
+    @busy_spinner
+    def on_grade_selected(self, current_index):
         grade = self.grades.currentText()
         self.presenter.select_grade(grade)
 
@@ -186,7 +189,8 @@ class Config(QDialog):
         self.rooms.setEnabled(True)
 
 
-    def on_room_selected(self):
+    @busy_spinner
+    def on_room_selected(self, current_index):
         room = self.rooms.currentText()
         self.presenter.select_room(room)
 
@@ -198,7 +202,8 @@ class Config(QDialog):
         self.cycles.setEnabled(True)
 
 
-    def on_cycle_selected(self):
+    @busy_spinner
+    def on_cycle_selected(self, current_index):
         cycle = self.cycles.currentText()
         is_successful, msg = self.presenter.select_report_cycle(cycle)
 
@@ -222,7 +227,8 @@ class Config(QDialog):
             self.reset(self.years)
 
 
-    def on_format_selected(self):
+    @busy_spinner
+    def on_format_selected(self, current_index):
         format = self.formats.currentText()
         self.presenter.select_report_format(format)
 
@@ -238,7 +244,6 @@ class Config(QDialog):
 
 
     def on_send_reports(self):
-        #self.report_printer.run()
         # Close the config widget returning successfully.
         # Processing is still taking place behind the scenes.
         self.accept()
