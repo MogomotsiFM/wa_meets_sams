@@ -2,26 +2,24 @@ import sys
 
 from itertools import takewhile
 
-from PyQt5.QtCore import Qt, QThread
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox
 from PyQt5.QtWidgets import QPushButton, QLabel
 
-from .report_printer import ReportPrinter
-
 from Presenter.presenter import Presenter
 
+
 class Config(QDialog):
-    def __init__(self, parent, presenter: Presenter, report_printer: ReportPrinter):
+    def __init__(self, parent, presenter: Presenter):
         super().__init__(parent)
 
         self.presenter = presenter
-        self.report_printer = report_printer
 
         self.setStyleSheet("font: 75 12pt Arial;")
 
         self.setWindowTitle("Settings")
-        self.setGeometry(400, 150, 400, 190)
+        self.resize(400, 190)
 
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
@@ -113,24 +111,32 @@ class Config(QDialog):
 
         self.setFixedSize(self.size())
 
+        self.setModal(True)
+
         self.initUI()
 
         # 
         self.controls = [self.years, self.grades, self.rooms, self.cycles, self.formats]
         self.reset(self.years)
 
-        self.sync()
-
 
     def initUI(self):
         self.years.activated.connect(self.on_year_selected)
         self.years.currentIndexChanged.connect(self.on_year_selected)
         self.grades.activated.connect(self.on_grade_selected)
+        #self.grades.currentIndexChanged.connect(self.on_grade_selected)
         self.rooms.activated.connect(self.on_room_selected)
         self.cycles.activated.connect(self.on_cycle_selected)
         self.formats.activated.connect(self.on_format_selected)
         self.send_reports_btn.clicked.connect(self.on_send_reports)
         self.cancel_printing_btn.clicked.connect(self.on_cancel_btn_clicked)
+
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Window is now shown and ready
+
+        QTimer.singleShot(500, self.sync)
 
 
     def sync(self):
@@ -155,9 +161,6 @@ class Config(QDialog):
             grades = self.presenter.get_grades_list()
             self.grades.clear()
             self.grades.addItems(grades)
-
-            self.reset(self.years)
-            self.grades.setEnabled(True)
         else:
             # Open a dialog to surface the error to the user
             msg = msg.capitalize()
@@ -167,7 +170,8 @@ class Config(QDialog):
 
             x = msg_box.exec_()
 
-            self.reset(self.years)
+        self.reset(self.years)
+        self.grades.setEnabled(True)
 
 
     def on_grade_selected(self):
@@ -226,9 +230,9 @@ class Config(QDialog):
 
 
     def closeEvent(self, event):
-        self.presenter.report_printing_done()
+        #self.presenter.report_printing_done()
         #self.presenter.exit_mainwindow()
-        self.presenter.home()
+        #self.presenter.home()
 
         event.accept()
 
@@ -238,15 +242,10 @@ class Config(QDialog):
 
 
     def on_send_reports(self):
-        grade  = self.grades.currentText()
-        room   = self.rooms.currentText()
-        cycle  = self.cycles.currentText()
-        format = self.formats.currentText()
-        self.report_printer.configure(grade, room, cycle, format)
-        self.report_printer.run()
+        #self.report_printer.run()
         # Close the config widget returning successfully.
         # Processing is still taking place behind the scenes.
-        #self.accept()
+        self.accept()
 
 
 if __name__ == "__main__":
