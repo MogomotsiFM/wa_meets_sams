@@ -17,7 +17,8 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("debug2.log", mode="w")]
+        logging.FileHandler("debug2.log", mode="w"),
+        logging.StreamHandler(stream=sys.stdout)]
 )
 
 sams_path = os.path.join("C:\\", "Users", "GAME", "Desktop", "EdusolSAMS")

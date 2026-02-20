@@ -2,9 +2,9 @@ import sys
 
 from itertools import takewhile
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QComboBox
+from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QComboBox
 from PyQt5.QtWidgets import QPushButton, QLabel
 
 from Presenter.presenter import Presenter
@@ -230,10 +230,6 @@ class Config(QDialog):
 
 
     def closeEvent(self, event):
-        #self.presenter.report_printing_done()
-        #self.presenter.exit_mainwindow()
-        #self.presenter.home()
-
         event.accept()
 
 
@@ -254,6 +250,6 @@ if __name__ == "__main__":
     # We have not tested this!!!
     presenter = Presenter("sams_path")
 
-    window = Config(None, presenter, None)
+    window = Config(None, presenter)
     window.show()
     sys.exit(app.exec_())
