@@ -6,12 +6,9 @@ from PyQt5.QtCore import QObject
 
 from PyQt5.QtCore import pyqtSignal as Signal
 
-from PyQt5.QtWidgets import QPlainTextEdit
-
 class Emitter(QObject):
     log = Signal(str)
 
-#QLogHandler
 class QLogHandler(logging.Handler):
     def __init__(self):
         super().__init__()
@@ -25,14 +22,3 @@ class QLogHandler(logging.Handler):
         msg = self.format(record)
         self.emitter.log.emit(msg)
 
-
-class QTextEditLogger(logging.Handler, QObject):
-    appendPlainText = Signal(str)
-
-    def __init__(self):
-        super().__init__()
-        QObject.__init__(self)
-
-    def emit(self, record):
-        msg = self.format(record)
-        self.appendPlainText.emit(msg)

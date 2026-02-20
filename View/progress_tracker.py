@@ -1,5 +1,3 @@
-import sys
-
 import logging
 
 from PyQt5.QtWidgets import QDialog, QPlainTextEdit
@@ -72,9 +70,6 @@ class ProgressReport(QDialog):
             self.printer.requestInterruption()
 
             self.printer.wait()
-
-        #self.presenter.report_printing_done()
-        #self.presenter.home()
 
         event.accept()
 

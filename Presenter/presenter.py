@@ -11,14 +11,7 @@ from enum import Enum
 from functools import reduce
 from dataclasses import dataclass
 
-import warnings
-#warnings.simplefilter("ignore", UserWarning)
-#warnings.filterwarnings("ignore")
-
-import pywinauto
-
 from pywinauto.controls.uia_controls import ComboBoxWrapper, ButtonWrapper
-from pywinauto.controls.uiawrapper import UIAWrapper
 
 from pywinauto.application import Application
 
@@ -44,6 +37,7 @@ class ComboBoxControlId(Enum):
 from typing import TypeAlias
 Key: TypeAlias = Literal["years", "grades", "rooms", "cycles", "formats"]
 
+logger = logging.getLogger()
 
 class Presenter:
     # Cache the selected grade
@@ -71,8 +65,6 @@ class Presenter:
         self.app, self.window = self._start(app_path)
 
         self.cache = self.create_controls_cache()
-        print("Cache:")
-        [print(k, control, type(control)) for k, control in self.cache.items()]
 
 
     def select_combo_box_option(self, combo_box: ComboBoxWrapper, value: str):
@@ -85,7 +77,7 @@ class Presenter:
         combo_box = combo_box.expand()
         kids = combo_box.children(control_type="List")
         for k in kids:
-            print(k.texts())
+            logger.debug(k.texts())
         kids[0].item(value).invoke()
 
 
@@ -112,14 +104,12 @@ class Presenter:
     # If you set the grade then you have to set the room, cycle, and maybe format
     # If you then reset the grade then you have to set these values again
     def _reset_config_options(self, key:Literal["years", "grades", "rooms", "cycles", "formats"]):
-        print("Here")
         settings = takewhile(lambda k: k!=key, reversed(self.controls))
-        print("\n\n", key, "     To be reset: ", list(settings))
+        logger.debug(f"\n\n{key}     To be reset: {list(settings)}")
         #settings = dropwhile(lambda k: k!=key, reversed(self.controls))
         #self.config = {k: self.config[k] for k in settings}
         for s in settings:
-            t = self.config.pop(s, "")
-            print(t, end=" , ")
+            self.config.pop(s, "")
 
 
     def _set_config_options(self, key:Literal["grades", "rooms", "cycles", "formats"], value):
@@ -146,9 +136,6 @@ class Presenter:
         """
         self.window.window(best_match="Learners", control_type="Group").window(best_match="All", control_type="Button").click()
 
-        # Select report format
-        #self.select_report_format(report_format)
-        
         self.window.window(best_match="Language to print", control_type="Group").English.click()
 
         self.window.window(best_match="Select filter options", control_type="Group").window(best_match="Selected learner", control_type="RadioButton").click()
@@ -392,18 +379,14 @@ class Presenter:
                 window = app.window(title_re="SA-SAMS")
                 window.wait("ready", timeout=30)
                 window.set_focus()
-                #window.print_control_identifiers()
-
-                #init(window)
-                #databases = self.local_dbs_list(window)
             except Exception as exp:
                 # Most likely the login window did not come up. There is a note somewhere about this.
                 # Check that SA-SAMS is not running
                 if app.is_process_running():
                     app.kill()
 
-                    print("Process was running")
-                print("Trying to start the program again...")
+                    logger.debug("Process was running")
+                logger.debug("Trying to start the program again...")
                 time.sleep(5)
             else: # Executed if no exception is raised.
                 break
@@ -439,7 +422,7 @@ class Presenter:
             # We failed because we found a popup dialog with an error message
             return False, msgs[0]
         except Exception as exp:
-            print("Dialog not found")
+            logger.debug("Dialog not found")
             return True, ""
 
     
@@ -456,14 +439,10 @@ class Presenter:
         self.select_combo_box_option(grade_combo_box, value=desired_grade)
 
         self._set_config_options("grades", desired_grade)
-        #self.grade = desired_grade
 
 
     def get_selected_grade(self):
-        #grade_combo_box = self.id_cb_map[ComboBoxControlId.GRADE.value]
-        #return grade_combo_box.selected_text()
         return self.config["grades"]
-        #return self.grade
     
 
     def get_rooms_list(self):
@@ -481,7 +460,7 @@ class Presenter:
 
     def select_room(self, desired_room):
         grade = self.get_selected_grade()
-        print("Selected grade: ", grade)
+        logger.debug(f"Selected grade: {grade}")
         if "All" not in grade:
             room_combo_box = self.id_cb_map[ComboBoxControlId.ROOM.value]
         
@@ -571,7 +550,7 @@ class Presenter:
 
                     self.process_room(grade, room, self.report_path)
                 else:
-                    print("Swallowed error: ", msg)
+                    logger.warning(f"Swallowed error: {msg}")
 
         cb = self.id_cb_map[ComboBoxControlId.PHASE.value]
         self.print_cover_page(cb, "FET", self.cover_pg_path)
