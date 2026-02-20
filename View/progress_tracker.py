@@ -10,11 +10,12 @@ from Common.log_handler import QLogHandler
 from Presenter.presenter import Presenter
 
 class ProgressReport(QDialog):
-    def __init__(self, parent, presenter: Presenter, printer: ReportPrinter):
+    def __init__(self, parent, presenter: Presenter, printer: ReportPrinter, log_handler: QLogHandler):
         super().__init__(parent)
 
         self.presenter = presenter
         self.printer = printer
+        self.log_handler = log_handler
 
         self.setStyleSheet("font: 75 12pt Arial;")
 
@@ -47,15 +48,13 @@ class ProgressReport(QDialog):
         self.setFixedSize(self.size())
         self.setModal(True)
 
-        logs = QLogHandler()
-        logging.getLogger().addHandler(logs)
-        logs.emitter.log.connect(self.edit.appendPlainText)
-
         self.initUI()
 
 
     def initUI(self):
         self.cancel_btn.clicked.connect(self.on_cancel_btn_clicked)
+
+        self.log_handler.emitter.log.connect(self.edit.appendPlainText)
 
 
     def showEvent(self, event):
