@@ -17,6 +17,7 @@ from pywinauto.application import Application
 
 from typing import Literal
 
+from Common.directories import AppDirectories
 
 class LoginStatus(Enum):
 	SUCCESS= 1
@@ -53,12 +54,12 @@ class Presenter:
     controls: list[Key] = ["years", "grades", "rooms", "cycles", "formats"]
     
 
-    def __init__(self, app_path, cover_pg_path, report_path):
-        self.app_path = os.path.abspath(app_path)
-        self.report_path = os.path.abspath(report_path)
-        self.cover_pg_path = os.path.abspath(cover_pg_path)
+    def __init__(self, app_dirs: AppDirectories):
+        self.app_path = os.path.abspath(app_dirs.sams_path)
+        self.report_path = os.path.abspath(app_dirs.reports_dir)
+        self.cover_pg_path = os.path.abspath(app_dirs.cover_pgs_dir)
 
-        self.app, self.window = self._start(app_path)
+        self.app, self.window = self._start(self.app_path)
 
         self.cache = self.create_controls_cache()
 

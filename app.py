@@ -10,22 +10,11 @@ from PyQt5.QtWidgets import QApplication
 
 from View.gui import MainWindow
 
+from Common.directories import AppDirectories, create_report_directories
+from Common.log_handler import QLogHandler
 from Common.report_printer import ReportPrinter
 
 from Presenter.presenter import Presenter
-
-from Common.log_handler import QLogHandler
-
-logger = QLogHandler()
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("debug2.log", mode="w"),
-        logging.StreamHandler(stream=sys.stdout),
-        logger]
-)
 
 sams_path = os.path.join("C:\\", "Users", "GAME", "Desktop", "EdusolSAMS")
 
@@ -33,18 +22,24 @@ sams_path = os.path.join("C:\\", "Users", "GAME", "Desktop", "EdusolSAMS")
 # The current directory
 reports_path = os.path.dirname(os.path.abspath(__file__))
 
-date = f"{datetime.now()}"
-date = date.replace(":", "T")
-cover_pg_path = os.path.join(reports_path, "Reports", date, "covers")
-report_path = os.path.join(reports_path, "Reports", date, "reports")
-os.makedirs(name=cover_pg_path, exist_ok=True)
-os.makedirs(name=report_path, exist_ok=True)
+logger = QLogHandler()
+log_file = os.path.join(reports_path, "debug.log")
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, mode="w"),
+        logging.StreamHandler(stream=sys.stdout),
+        logger]
+)
 
-presenter = Presenter(sams_path, cover_pg_path, report_path)
+app_dirs = create_report_directories(sams_path, reports_path)
+
+presenter = Presenter(app_dirs)
 printer = ReportPrinter(presenter)
 
 app = QApplication(sys.argv)
-window = MainWindow(presenter, printer, logger)
+window = MainWindow(app_dirs, presenter, printer, logger)
 window.show()
 
 sys.exit(app.exec_())
