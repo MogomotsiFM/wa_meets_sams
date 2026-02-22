@@ -12,9 +12,9 @@ from pypdf import PdfReader, PdfWriter,PageObject as Page
 from join_tables import join_tables
 
 
-def load_cover_page(grade: str, path: str):
+def load_cover_page(grade: str, cover_pg_dir: str):
     phase = "FET" if grade in ["Grade 10", "Grade 11", "Grade 12"] else "Senior" if grade in ["Grade 7", "Grade 8", "Grade 9"] else "Junior"
-    cover_page_path = os.path.join(path, "covers", f"{phase}_report_cover.pdf")
+    cover_page_path = os.path.join(cover_pg_dir, f"{phase}_report_cover.pdf")
     reader = PdfReader(cover_page_path)
     return reader.pages[0]
 
@@ -162,21 +162,10 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
             yield LearnerReport(report=page, filename=filename, encryption_key=None)
 
 
-def process_reports(db_path, root_dir):
+def process_reports(db_path, reports_path, cover_pg_path, dead_letter_dir, pending_delivery_dir):
     _, joined_table = join_tables(db_path)
     print("Joined table data:", joined_table)
     dataframe = pd.DataFrame(joined_table)
-    
-    dead_letter_dir = os.path.join(root_dir, "dead_letter")
-    if not os.path.exists(dead_letter_dir):
-        os.makedirs(dead_letter_dir)
-
-    pending_delivery_dir = os.path.join(root_dir, "pending_delivery")
-    if not os.path.exists(pending_delivery_dir):
-        os.makedirs(pending_delivery_dir)
-
-    reports_dir_ = os.path.join(root_dir, "Reports")
-    reports_path = Path(reports_dir_)
 
     for report_path in reports_path.iterdir():
         if report_path.is_file() and report_path.suffix.lower() == ".pdf":
@@ -185,7 +174,7 @@ def process_reports(db_path, root_dir):
 
             grade = report_path.name.split("_")[0]
 
-            cover_page = load_cover_page(grade, root_dir)
+            cover_page = load_cover_page(grade, cover_pg_path)
 
             reports = process_pdf_by_learner(reader.pages, dataframe)
             for learner_report in reports:
@@ -208,5 +197,16 @@ if __name__ == "__main__":
     db_path = "TestingDB.mdb"
 
     root_dir = "C:\\Users\GAME\\Desktop\\EdusolSAMS\\reports\\2026-02-20 22T58T10.473443"
+    dead_letter_dir = os.path.join(root_dir, "dead_letter")
+    if not os.path.exists(dead_letter_dir):
+        os.makedirs(dead_letter_dir)
 
-    process_reports(db_path, root_dir)
+    pending_delivery_dir = os.path.join(root_dir, "pending_delivery")
+    if not os.path.exists(pending_delivery_dir):
+        os.makedirs(pending_delivery_dir)
+
+    reports_dir_ = os.path.join(root_dir, "Reports")
+    reports_path = Path(reports_dir_)
+
+    cover_pg_dir = os.path.join(root_dir, "covers")
+    process_reports(db_path, reports_path, cover_pg_dir, dead_letter_dir, pending_delivery_dir)
