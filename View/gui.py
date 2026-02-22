@@ -23,6 +23,7 @@ class MainWindow(QMainWindow):
         self.presenter = presenter_
         self.report_printer = report_printer
         self.log_handler = log_handler
+        self.db_path = None
 
         self.setStyleSheet("font: 75 12pt Arial;")
 
@@ -182,6 +183,8 @@ class MainWindow(QMainWindow):
 
     def on_networked_db_path_updated(self):
         path = self.network_db_path.text()
+        self.db_path = path
+
         self.presenter.set_networked_db(path)
 
         self.network_continue_btn.setEnabled(True)
@@ -194,6 +197,9 @@ class MainWindow(QMainWindow):
         db_name = db_name[0].text()
 
         self.presenter.select_local_db(db_name)
+
+        # Assume that the database is in the Data folder of the SAMS installation directory
+        self.db_path = os.path.join(self.presenter.home_directory(), "Data", db_name)
 
 
     def on_network_radio_clicked(self):
