@@ -53,16 +53,10 @@ class Presenter:
     controls: list[Key] = ["years", "grades", "rooms", "cycles", "formats"]
     
 
-    def __init__(self, app_path):
+    def __init__(self, app_path, cover_pg_path, report_path):
         self.app_path = os.path.abspath(app_path)
-        
-        report_folder = "Reports"
-        date = f"{datetime.datetime.now()}"
-        date = date.replace(":", "T")
-        self.cover_pg_path = os.path.join(app_path, report_folder, date, "covers")
-        self.report_path = os.path.join(app_path, report_folder, date, "reports")
-        os.makedirs(name=self.cover_pg_path, exist_ok=True)
-        os.makedirs(name=self.report_path, exist_ok=True)
+        self.report_path = os.path.abspath(report_path)
+        self.cover_pg_path = os.path.abspath(cover_pg_path)
 
         self.app, self.window = self._start(app_path)
 
