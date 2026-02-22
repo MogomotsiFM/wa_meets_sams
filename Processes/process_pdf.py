@@ -23,26 +23,28 @@ def name_file(learner: pd.DataFrame) -> tuple[str, bool]:
     """
     Create a filename based on the learner's information.
     """
-    learner['Tel1'] = (learner['Tel1Code'] + learner['Tel1']) if pd.notna(learner['Tel1']) and learner['Tel1'].isdigit() else None
-    learner['Tel2'] = (learner['Tel2Code'] + learner['Tel2']) if pd.notna(learner['Tel2']) and learner['Tel2'].isdigit() else None
-    learner['Tel3'] = (learner['Tel3Code'] + learner['Tel3']) if pd.notna(learner['Tel3']) and learner['Tel3'].isdigit() else None
-
+    learner['Tel1'] = (learner['Tel1Code'] + learner['Tel1'])
+    learner['Tel2'] = (learner['Tel2Code'] + learner['Tel2'])
+    # For some reason, Tel3Code is null by default, while every missing value is an empty string.
+    if pd.notna(learner['Tel3Code']) and learner['Tel3Code'].isdigit():
+        learner['Tel3'] = (learner['Tel3Code'] + learner['Tel3'])
+    
     filename = learner['FName']
-    if pd.notna(learner['SecondName']):
+    if len(learner['SecondName']) > 0:
         filename += f" {learner['SecondName']}"
     filename += f" {learner['SName']}"
 
     contact_number_exists = False
-    if pd.notna(learner['Tel1Code']):
+    if len(learner['Tel1']) >= 10:
         filename += f" - Tel{learner['Tel1']}"
         contact_number_exists = True
-    if pd.notna(learner['Tel2Code']):
+    if len(learner['Tel2']) >= 10:
         filename += f" - Tel{learner['Tel2']}"
         contact_number_exists = True
-    if pd.notna(learner['Tel3Code']):
+    if len(learner['Tel3']) >= 10:
         filename += f" - Tel{learner['Tel3']}"
         contact_number_exists = True
-    if pd.notna(learner['EMail']):
+    if len(learner['EMail']) > 0:
         filename += f" - EMail{learner['EMail']}"
     
     return filename, contact_number_exists
@@ -53,13 +55,13 @@ def generate_encryption_key(learner: pd.DataFrame) -> str:
     Generate an encryption key based on the learner's ParentIDNo or SpouseID.
     If both are missing, generate a key from the learner's name.
     """
-    if pd.notna(learner['ParentIDNo']):
-        return str(learner['ParentIDNo'])
-    elif pd.notna(learner['SpouseID']):
-        return str(learner['SpouseID'])
+    if len(learner['ParentIDNo']) > 0:
+        return learner['ParentIDNo']
+    elif len(learner['SpouseID']) > 0:
+        return learner['SpouseID']
     else:
         key = f"{learner['FName'].capitalize()}{learner['SName'].capitalize()}"
-        if pd.notna(learner['SecondName']):
+        if len(learner['SecondName']) > 0:
             key = f"{learner['FName'].capitalize()}{learner['SecondName'].capitalize()}{learner['SName'].capitalize()}"
         return key
 
@@ -81,14 +83,14 @@ def extract_learner_name(text: str) -> tuple[str, str|None, str]:
     surname, names_ = learner_name.split(",")
     names = names_.strip().split(" ")
 
-    first_name = names[0]
+    first_name = names[0].strip()
     if len(names) > 1:
-        second_name = names[1]
+        second_name = names[1].strip()
     else:
-        second_name = None
+        second_name = ""
 
     first_name = first_name.strip()
-    second_name = second_name.strip() if second_name else None
+    second_name = second_name.strip()
     surname = surname.strip()
 
     return first_name, second_name, surname
@@ -164,7 +166,6 @@ def process_reports(db_path, root_dir):
     _, joined_table = join_tables(db_path)
     print("Joined table data:", joined_table)
     dataframe = pd.DataFrame(joined_table)
-    dataframe[dataframe == ""] = None
     
     dead_letter_dir = os.path.join(root_dir, "dead_letter")
     if not os.path.exists(dead_letter_dir):
