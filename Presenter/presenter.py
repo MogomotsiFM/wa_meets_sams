@@ -54,6 +54,8 @@ class Presenter:
     
 
     def __init__(self, app_path):
+        self.app_path = os.path.abspath(app_path)
+        
         report_folder = "Reports"
         date = f"{datetime.datetime.now()}"
         date = date.replace(":", "T")
@@ -65,6 +67,9 @@ class Presenter:
         self.app, self.window = self._start(app_path)
 
         self.cache = self.create_controls_cache()
+
+    def home_directory(self):
+        return self.app_path
 
 
     def select_combo_box_option(self, combo_box: ComboBoxWrapper, value: str):
