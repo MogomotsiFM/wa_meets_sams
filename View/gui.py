@@ -11,15 +11,17 @@ from .options import Config
 from .progress_tracker import ProgressReport
 
 from Common.report_printer import ReportPrinter
+from Common.directories import AppDirectories
 from Common.log_handler import QLogHandler
 
 from Presenter.presenter import Presenter
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, presenter_: Presenter, report_printer: ReportPrinter, log_handler: QLogHandler):
+    def __init__(self, app_dirs: AppDirectories, presenter_: Presenter, report_printer: ReportPrinter, log_handler: QLogHandler):
         super().__init__()
 
+        self.app_dirs = app_dirs
         self.presenter = presenter_
         self.report_printer = report_printer
         self.log_handler = log_handler
@@ -240,7 +242,7 @@ class MainWindow(QMainWindow):
         # Returns 0 if the config dialog was cancelled.
         if x == QDialog.DialogCode.Accepted:
             # Open a progress tracking widget
-            pr = ProgressReport(self, self.presenter, self.report_printer, self.log_handler)
+            pr = ProgressReport(self, self.app_dirs, self.presenter, self.report_printer, self.log_handler)
 
             x = pr.exec_()
             if x == QDialog.DialogCode.Rejected:

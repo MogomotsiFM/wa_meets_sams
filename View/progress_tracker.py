@@ -5,14 +5,16 @@ from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout
 from PyQt5.QtWidgets import QPushButton
 
 from Common.report_printer import ReportPrinter
+from Common.directories import AppDirectories
 from Common.log_handler import QLogHandler
 
 from Presenter.presenter import Presenter
 
 class ProgressReport(QDialog):
-    def __init__(self, parent, presenter: Presenter, printer: ReportPrinter, log_handler: QLogHandler):
+    def __init__(self, app_dirs:AppDirectories, parent, presenter: Presenter, printer: ReportPrinter, log_handler: QLogHandler):
         super().__init__(parent)
 
+        self.app_dirs = app_dirs
         self.presenter = presenter
         self.printer = printer
         self.log_handler = log_handler
