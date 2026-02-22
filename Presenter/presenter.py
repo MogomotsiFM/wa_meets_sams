@@ -162,7 +162,12 @@ class Presenter:
     def print_pdf(self, button: ButtonWrapper, filename: str):
         button.click()
 
-        self.window.window(best_match="Print setup", control_type="Window").OK.click()
+        # Ensure we always print to PDF by selecting the correct printer in the print setup dialog
+        print_setup_window = self.window.window(best_match="Print setup", control_type="Window")
+        print_destination_combo_box = print_setup_window.window(best_match="Name", control_type="ComboBox")
+        self.select_combo_box_option(print_destination_combo_box, "Microsoft Print to PDF")
+
+        print_setup_window.OK.click()
 
         parent = self.window.window(best_match="Print reports", control_type="Window")
         parent.window(parent=parent, best_match="Print report", control_type="Button").click()
