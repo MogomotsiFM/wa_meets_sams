@@ -226,7 +226,6 @@ class MainWindow(QMainWindow):
 
 
     def configure_report_printer(self):
-
         config = Config(self, self.presenter)
 
         x = config.exec_()
@@ -261,13 +260,17 @@ class MainWindow(QMainWindow):
 
 
     def on_continue_btn_clicked(self):
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         self.presenter.continue_to_login()
-        
+        QApplication.restoreOverrideCursor()
+
         login = Login(self, self.presenter)
 
         # Returns 1 if the dialog was closed with OK. Returns 0 otherwise.
         if login.exec_() == QDialog.DialogCode.Accepted:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
             self.presenter.go_to_progress_report_widget()
+            QApplication.restoreOverrideCursor()
 
             self.configure_report_printer()
 

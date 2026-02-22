@@ -80,14 +80,15 @@ class Login(QDialog):
         self.close()
 
 
-    @busy_spinner
     def on_login_btn_clicked(self, btn_status):
         username = self.username_text.text()
         password = self.password_text.text()
 
         print("Username: ", username, "  Password: ", password)
 
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         status, msg = self.presenter.login(username, password)
+        QApplication.restoreOverrideCursor()
 
         print("Login message: ", msg)
 
