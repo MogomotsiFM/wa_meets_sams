@@ -158,8 +158,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.presenter.is_running():
-            self.presenter.report_printing_done()
-            self.presenter.exit_mainwindow()
+            try:
+                self.presenter.report_printing_done()
+            finally:
+                self.presenter.exit_mainwindow()
 
         event.accept()
 
