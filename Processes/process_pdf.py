@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 
 from pathlib import Path
@@ -13,7 +14,7 @@ from .join_tables import join_tables
 
 
 def load_cover_page(grade: str, cover_pg_dir: str):
-    phase = "FET" if grade in ["Grade 10", "Grade 11", "Grade 12"] else "Senior" if grade in ["Grade 7", "Grade 8", "Grade 9"] else "Junior"
+    phase = "FET" if grade.capitalize() in ["10", "11", "12"] else "Senior" if grade in ["8", "9"] else "Junior"
     cover_page_path = os.path.join(cover_pg_dir, f"{phase}_report_cover.pdf")
     reader = PdfReader(cover_page_path)
     return reader.pages[0]
@@ -60,9 +61,12 @@ def generate_encryption_key(learner: pd.DataFrame) -> str:
     elif len(learner['SpouseID']) > 0:
         return learner['SpouseID']
     else:
-        key = f"{learner['FName'].capitalize()}{learner['SName'].capitalize()}"
-        if len(learner['SecondName']) > 0:
-            key = f"{learner['FName'].capitalize()}{learner['SecondName'].capitalize()}{learner['SName'].capitalize()}"
+        first = learner['FName'].capitalize()
+        second = learner['SecondName'].capitalize().replace(" ", "")
+        surname = learner['SName'].capitalize()
+        key = f"{first}{surname}"
+        if len(second) > 0:
+            key = f"{first}{second}{surname}"
         return key
 
 
@@ -81,8 +85,8 @@ def extract_learner_name(text: str) -> tuple[str, str, str]:
             break
     
     if learner_name == "":
-        logging.getLogger().error("Learner name not found in the text.")
-        raise
+        logging.getLogger().error("Learner name not found in the report.")
+        raise ValueError("Learner name not found in the report.")
     
     surname, names_ = learner_name.split(",")
     names = names_.strip().split(" ")
@@ -116,7 +120,12 @@ def extract_information(text: str, pattern: str) -> str|None:
 class LearnerReport:
     report: Page
     filename: str
+    grade: str
     encryption_key: str|None
+
+
+def raise_exception(exp: Exception):
+    raise exp
 
 
 def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
@@ -126,6 +135,9 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
     for page in pages:
         text = page.extract_text().lower()
         
+        grade = extract_information(text, "grade")
+        grade = re.findall(r"\d+", grade)[0] if grade else raise_exception(ValueError("Grade not found in the report."))
+
         admission_no = extract_information(text, "admission no:")
         # if the admission number is found, we can use it to lookup the learner in the dataframe
         if admission_no:
@@ -161,9 +173,9 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
         if contact_number_exists:
             # It is likely that we will send the report via WhatsApp if a contact number exists.
             #writer.encrypt(str(key))
-            yield LearnerReport(report=page, filename=filename, encryption_key=key)
+            yield LearnerReport(report=page, filename=filename, grade=grade, encryption_key=key)
         else:
-            yield LearnerReport(report=page, filename=filename, encryption_key=None)
+            yield LearnerReport(report=page, filename=filename, grade=grade, encryption_key=None)
 
 
 def process_reports(db_path: str, 
@@ -184,39 +196,38 @@ def process_reports(db_path: str,
 
             grade = report_path.name.split("_")[0]
 
-            cover_page = load_cover_page(grade, cover_pg_dir)
-
             reports = process_pdf_by_learner(reader.pages, dataframe)
-            for learner_report in reports:
+            for report in reports:
+                logging.getLogger().debug(f"Filename: {report.filename}, Grade: {report.grade} vs {grade}")
+                cover_page = load_cover_page(report.grade, cover_pg_dir)
+                
                 writer = PdfWriter()
                 writer.add_page(cover_page)
-                writer.add_page(learner_report.report)
-                if learner_report.encryption_key:
-                    writer.encrypt(learner_report.encryption_key)
-                    output_path = os.path.join(pending_delivery_dir, f"{learner_report.filename}.pdf")
+                writer.add_page(report.report)
+                if report.encryption_key:
+                    writer.encrypt(report.encryption_key)
+                    output_path = os.path.join(pending_delivery_dir, f"{report.filename}.pdf")
                 else:
-                    output_path = os.path.join(dead_letter_dir, f"{learner_report.filename}.pdf")
+                    output_path = os.path.join(dead_letter_dir, f"{report.filename}.pdf")
 
                 with open(output_path, 'wb') as f:
                     writer.write(f)
                 
-                logging.getLogger().info(f"Saved report: {learner_report.filename} with key: {learner_report.encryption_key}")
+                logging.getLogger().info(f"Saved report: {report.filename} with key: {report.encryption_key}")
 
 
 if __name__ == "__main__":
     db_path = "TestingDB.mdb"
 
     root_dir = "C:\\Users\GAME\\Desktop\\EdusolSAMS\\reports\\2026-02-20 22T58T10.473443"
-    dead_letter_dir = os.path.join(root_dir, "dead_letter")
-    if not os.path.exists(dead_letter_dir):
-        os.makedirs(dead_letter_dir)
+    dead_letter_dir = Path( os.path.join(root_dir, "dead_letter") )
+    os.makedirs(dead_letter_dir, exist_ok=True)
 
-    pending_delivery_dir = os.path.join(root_dir, "pending_delivery")
-    if not os.path.exists(pending_delivery_dir):
-        os.makedirs(pending_delivery_dir)
+    pending_delivery_dir = Path( os.path.join(root_dir, "pending_delivery") )
+    os.makedirs(pending_delivery_dir, exist_ok=True)
 
     reports_dir_ = os.path.join(root_dir, "Reports")
     reports_path = Path(reports_dir_)
 
-    cover_pg_dir = os.path.join(root_dir, "covers")
+    cover_pg_dir = Path( os.path.join(root_dir, "covers") )
     process_reports(db_path, reports_path, cover_pg_dir, dead_letter_dir, pending_delivery_dir)
