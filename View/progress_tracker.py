@@ -1,5 +1,6 @@
 import logging
 
+from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtWidgets import QDialog, QPlainTextEdit
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout
 from PyQt5.QtWidgets import QPushButton
@@ -10,8 +11,16 @@ from Common.log_handler import QLogHandler
 
 from Presenter.presenter import Presenter
 
+from Processes.qprocess_pdf import QProcessReports
+
 class ProgressReport(QDialog):
-    def __init__(self, app_dirs:AppDirectories, parent, presenter: Presenter, printer: ReportPrinter, log_handler: QLogHandler):
+    def __init__(self, 
+                 parent, 
+                 app_dirs:AppDirectories, 
+                 presenter: Presenter, 
+                 printer: ReportPrinter, 
+                 log_handler: QLogHandler
+            ):
         super().__init__(parent)
 
         self.app_dirs = app_dirs
@@ -31,6 +40,7 @@ class ProgressReport(QDialog):
         
         self.edit = QPlainTextEdit()
         self.edit.setReadOnly(True)
+        self.edit.setStyleSheet("font: 75 10pt Arial;")
         #self.edit.setMaximumBlockCount(500)
         main_layout.addWidget(self.edit)
 
@@ -56,12 +66,22 @@ class ProgressReport(QDialog):
     def initUI(self):
         self.cancel_btn.clicked.connect(self.on_cancel_btn_clicked)
 
-        self.log_handler.emitter.log.connect(self.edit.appendPlainText)
+        self.log_handler.emitter.log.connect(self.append_and_scroll_scrollbar)
+
+        self.printer.finished.connect(self.on_printer_finished)
+
+
+    @Slot(str)
+    def append_and_scroll_scrollbar(self, text):
+        self.edit.appendPlainText(text)
+        # Get the vertical scroll bar
+        scrollbar = self.edit.verticalScrollBar()
+        # Set its value to its maximum
+        scrollbar.setValue(scrollbar.maximum())
 
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Window is now shown and read
 
         self.printer.start()
 
@@ -79,8 +99,9 @@ class ProgressReport(QDialog):
         self.close()
 
         
+    def on_printer_finished(self):
+        processor = QProcessReports(self, self.app_dirs)
 
+        processor.start()
 
-
-        
 

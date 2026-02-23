@@ -134,6 +134,7 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
     """
     for page in pages:
         text = page.extract_text().lower()
+        logging.getLogger().debug(f"Report text: {text}")
         
         grade = extract_information(text, "grade")
         grade = re.findall(r"\d+", grade)[0] if grade else raise_exception(ValueError("Grade not found in the report."))
