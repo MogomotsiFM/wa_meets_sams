@@ -105,7 +105,7 @@ class Presenter:
     # If you then reset the grade then you have to set these values again
     def _reset_config_options(self, key:Literal["years", "grades", "rooms", "cycles", "formats"]):
         settings = takewhile(lambda k: k!=key, reversed(self.controls))
-        logger.debug(f"\n\n{key}     To be reset: {list(settings)}")
+        logger.debug(f"{key}     To be reset: {list(settings)}")
         #settings = dropwhile(lambda k: k!=key, reversed(self.controls))
         #self.config = {k: self.config[k] for k in settings}
         for s in settings:
