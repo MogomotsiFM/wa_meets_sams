@@ -1,4 +1,5 @@
 import sys
+import logging
 
 from itertools import takewhile
 
@@ -97,6 +98,10 @@ class Config(QDialog):
 
         main_layout.addLayout(layout)
         main_layout.addSpacing(2)
+
+        #-----
+        # TODO: Do we want to a cover page to a report?
+        # TODO: Choose the page orientation of the report: portrait or landscape?
 
         #-----
         layout = QHBoxLayout()
@@ -209,7 +214,7 @@ class Config(QDialog):
 
         if is_successful:
             formats = self.presenter.get_report_formats()
-            print("Report formats: ", formats)
+            logging.getLogger().debug(f"Report formats: {formats}")
             self.formats.clear()
             self.formats.addItems(formats)
 
