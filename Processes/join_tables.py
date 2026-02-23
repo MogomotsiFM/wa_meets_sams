@@ -6,8 +6,10 @@ def join_tables(db_path):
 
     json_data = json.dumps(data_to_send)
 
+    db_reader_path = "Processes/read_db.mjs"
+
     # Spawn the Node.js process
-    process = subprocess.Popen(['node', 'read_db.mjs'], 
+    process = subprocess.Popen(['node', db_reader_path], 
                             stdin=subprocess.PIPE, 
                             stdout=subprocess.PIPE, 
                             stderr=subprocess.PIPE, 

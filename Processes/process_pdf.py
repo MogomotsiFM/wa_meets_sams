@@ -7,9 +7,9 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from pypdf import PdfReader, PdfWriter,PageObject as Page
+from pypdf import PdfReader, PdfWriter, PageObject as Page
 
-from join_tables import join_tables
+from .join_tables import join_tables
 
 
 def load_cover_page(grade: str, cover_pg_dir: str):
@@ -66,7 +66,7 @@ def generate_encryption_key(learner: pd.DataFrame) -> str:
         return key
 
 
-def extract_learner_name(text: str) -> tuple[str, str|None, str]:
+def extract_learner_name(text: str) -> tuple[str, str, str]:
     """
     Extract the learner's name from the text.
     The expected format is "learner: surname, names" where names can be one or
@@ -79,7 +79,11 @@ def extract_learner_name(text: str) -> tuple[str, str|None, str]:
         if "learner: " in line:
             learner_name = line.replace("learner: ", "").strip()
             break
-
+    
+    if learner_name == "":
+        logging.getLogger().error("Learner name not found in the text.")
+        raise
+    
     surname, names_ = learner_name.split(",")
     names = names_.strip().split(" ")
 
@@ -125,10 +129,10 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
         admission_no = extract_information(text, "admission no:")
         # if the admission number is found, we can use it to lookup the learner in the dataframe
         if admission_no:
-            print(f"Found admission number: {admission_no}")
+            logging.getLogger().debug(f"Found admission number: {admission_no}")
             learner_info = dataframe[dataframe['AccessionNo'] == admission_no].iloc[0]
         else:
-            print("No admission number found, using learner information to uniquely identify the learner")
+            logging.getLogger().debug("No admission number found, using learner information to uniquely identify the learner")
             firstname, second_name, surname = extract_learner_name(text)
             birth_date = extract_information(text, "birth date:")
             birth_date = birth_date.replace("/", "") if birth_date else None
@@ -147,7 +151,7 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
             ]#.iloc[0]
 
             if learner_info.size > 1:
-                print(f"Multiple learners found for {firstname} {second_name} {surname} with birth date {birth_date}.")
+                logging.getLogger().error(f"Multiple learners found for {firstname} {second_name} {surname} with birth date {birth_date}.")
             
             learner_info = learner_info.iloc[0]
 
@@ -162,19 +166,25 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
             yield LearnerReport(report=page, filename=filename, encryption_key=None)
 
 
-def process_reports(db_path, reports_path, cover_pg_path, dead_letter_dir, pending_delivery_dir):
+def process_reports(db_path: str, 
+                    reports_dir: Path,
+                    cover_pg_dir: Path,
+                    dead_letter_dir: Path,
+                    pending_delivery_dir: Path
+                ):
+    logging.getLogger().info("Starting report processing...")
     _, joined_table = join_tables(db_path)
-    print("Joined table data:", joined_table)
+    logging.getLogger().debug(f"Joined table data: {joined_table}")
     dataframe = pd.DataFrame(joined_table)
 
-    for report_path in reports_path.iterdir():
+    for report_path in reports_dir.iterdir():
         if report_path.is_file() and report_path.suffix.lower() == ".pdf":
             reader = PdfReader(report_path)
-            print(f"Processing PDF: {report_path.name}")
+            logging.getLogger().info(f"Processing PDF: {report_path.name}")
 
             grade = report_path.name.split("_")[0]
 
-            cover_page = load_cover_page(grade, cover_pg_path)
+            cover_page = load_cover_page(grade, cover_pg_dir)
 
             reports = process_pdf_by_learner(reader.pages, dataframe)
             for learner_report in reports:
@@ -190,7 +200,7 @@ def process_reports(db_path, reports_path, cover_pg_path, dead_letter_dir, pendi
                 with open(output_path, 'wb') as f:
                     writer.write(f)
                 
-                print(f"Saved report: {learner_report.filename} with key: {learner_report.encryption_key}")
+                logging.getLogger().info(f"Saved report: {learner_report.filename} with key: {learner_report.encryption_key}")
 
 
 if __name__ == "__main__":
