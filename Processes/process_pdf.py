@@ -80,6 +80,7 @@ def extract_learner_name(text: str) -> tuple[str, str, str]:
     """
     learner_name = ""
     for line in text.split('\n'):
+        # TODO: Find a more robust way to extract the learner's name. 
         if "learner: " in line:
             learner_name = line.replace("learner: ", "").strip()
             break
@@ -145,7 +146,7 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
             logging.getLogger().debug(f"Found admission number: {admission_no}")
             learner_info = dataframe[dataframe['AccessionNo'] == admission_no].iloc[0]
         else:
-            logging.getLogger().debug("No admission number found, using learner information to uniquely identify the learner")
+            logging.getLogger().debug("No admission number found, using learner information to uniquely identify learners.")
             firstname, second_name, surname = extract_learner_name(text)
             birth_date = extract_information(text, "birth date:")
             birth_date = birth_date.replace("/", "") if birth_date else None
