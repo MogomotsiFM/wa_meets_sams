@@ -167,12 +167,14 @@ class Presenter:
         print_destination_combo_box = print_setup_window.window(best_match="Name", control_type="ComboBox")
         self.select_combo_box_option(print_destination_combo_box, "Microsoft Print to PDF")
 
-        print_setup_window.OK.click()
+        #print_setup_window.OK.click()
+        print_setup_window.window(best_match="OK", control_type="Button").click()
 
         parent = self.window.window(best_match="Print reports", control_type="Window")
         parent.window(parent=parent, best_match="Print report", control_type="Button").click()
 
-        self.window.Print.OK.click()
+        #self.window.Print.OK.click()
+        self.window.window(best_match="OK", control_type="Button").click()
 
         # A new window in a new tree is opened
         save_window = self.app.window(best_match="Printing records", control_type="Window")
@@ -422,7 +424,8 @@ class Presenter:
             parent = parent.window(best_match="User Message", control_type="Window")
             parent.wait(wait_for="ready")
             msgs = parent.window(control_type="Text").texts()
-            parent.OK.click()
+            #parent.OK.click()
+            parent.window(best_match="OK", control_type="Button").click()
 
             # We failed because we found a popup dialog with an error message
             return False, msgs[0]
@@ -496,7 +499,8 @@ class Presenter:
             parent = parent.window(best_match="User Message", control_type="Window")
             parent.wait(wait_for="ready", timeout=1)
             msgs = parent.window(control_type="Text").texts()
-            parent.OK.click()
+            #parent.OK.click()
+            parent.window(best_match="OK", control_type="Button").click()
 
             logging.getLogger().warning(msgs[0])
 
