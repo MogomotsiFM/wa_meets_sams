@@ -1,2 +1,7 @@
+#npm
+#localtunnel
+#
 pywinauto
 pydpf[crypto]
+pandas
+aiohttp
