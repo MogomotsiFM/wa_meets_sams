@@ -37,6 +37,40 @@ class WhatsAppWrapper:
         }
 
 
+    async def send_opt_in_message(self, recipient_number, date, day, time):
+        template_name = "permission_send_progress_reports"
+        params = {
+            "body": [
+                {
+                    "parameter_name": "date",
+                    "parameter_value": date   
+                },
+                {
+                    "parameter_name": "day",
+                    "parameter_value": day
+                },
+                {
+                    "parameter_name": "time",
+                    "parameter_value": time
+                }
+            ]
+        }
+        return self.send_template(recipient_number, template_name, params)
+
+
+    async def send_progress_report(self, recipient_number, report_url):
+        template_name = "send_progress_report"
+        params = {
+            "header": [
+                {
+                    "parameter_name": "report_url",
+                    "paramter_value": report_url
+                }
+            ]
+        }
+        return self.send_template(recipient_number, template_name, params)
+
+
     async def _send_message(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Send a message using the WhatsApp Cloud API."""
         async with aiohttp.ClientSession() as session:
