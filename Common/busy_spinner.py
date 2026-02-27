@@ -1,8 +1,10 @@
 from functools import wraps
+from contextlib import contextmanager
+
 from pyqtspinner import WaitingSpinner
 
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QObject
 
 def busy_spinner(func):
     @wraps(func)
@@ -19,3 +21,10 @@ def busy_spinner(func):
     return wrapper
 
 
+@contextmanager
+def context_mngd_busy_spinner(sender: QObject):
+    sender.blockSignals(True)
+    QApplication.setOverrideCursor(Qt.WaitCursor)
+    yield
+    QApplication.restoreOverrideCursor()
+    sender.blockSignals(False)
