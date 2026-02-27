@@ -5,12 +5,12 @@ from PyQt5.QtWidgets import QDialog, QPlainTextEdit
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout
 from PyQt5.QtWidgets import QPushButton
 
-from Common.report_printer import ReportPrinter
 from Common.directories import AppDirectories
 from Common.log_handler import QLogHandler
 
 from Presenter.presenter import Presenter
 
+from Processes.report_printer import ReportPrinter
 from Processes.qprocess_pdf import QProcessReports
 
 class ProgressReport(QDialog):
