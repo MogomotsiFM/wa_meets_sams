@@ -10,9 +10,10 @@ from PyQt5.QtWidgets import QApplication
 
 from View.gui import MainWindow
 
-from Common.directories import AppDirectories, create_report_directories
+from Common.directories import create_report_directories
 from Common.log_handler import QLogHandler
-from Common.report_printer import ReportPrinter
+
+from Processes.report_printer import ReportPrinter
 
 from Presenter.presenter import Presenter
 

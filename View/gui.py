@@ -10,7 +10,7 @@ from .login import Login
 from .options import Config
 from .progress_tracker import ProgressReport
 
-from Common.report_printer import ReportPrinter
+from Processes.report_printer import ReportPrinter
 from Common.directories import AppDirectories
 from Common.log_handler import QLogHandler
 
