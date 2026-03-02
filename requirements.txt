@@ -5,3 +5,6 @@ pywinauto
 pydpf[crypto]
 pandas
 aiohttp
+fastapi
+fastapi-guard
+uvicorn
