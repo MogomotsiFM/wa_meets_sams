@@ -180,10 +180,9 @@ async def root(request: Request):
 
 
 async def run_helper(port):
-    nn = pim.NoName()
     uvi = lambda: uvicorn.run("Server.server:app", port=APP_PORT)
     await asyncio.gather(
-        nn.process_messages(),
+        pim.process_messages(),
         asyncio.to_thread(uvi)
     )
 
