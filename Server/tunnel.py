@@ -40,7 +40,8 @@ def create_tunnel(port, subdomain):
             return False, output, process
     
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
+def test_app():
     port = 4001
     subdomain = "mogomotsihs"
     status, tunnel_url, process = create_tunnel(port, subdomain)

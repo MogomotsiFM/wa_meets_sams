@@ -1,10 +1,13 @@
 import os
+import sys
 import hmac
+import asyncio
 import hashlib
 import secrets
 import socket
 import logging
 import json
+import redis
 
 from contextlib import asynccontextmanager
 
@@ -18,9 +21,16 @@ from guard.middleware import SecurityMiddleware
 from guard.models import SecurityConfig
 
 import ngrok
-from tunnel import create_tunnel
+#from tunnel import create_tunnel
+from . import tunnel
 
-from aso_name import get_autonomous_sys_org_name
+from Server.aso_name import get_autonomous_sys_org_name
+#from . import aso_name
+
+from Processes import process_incoming_messages as pim
+
+from dotenv import load_dotenv
+load_dotenv()
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
@@ -41,13 +51,16 @@ subdomain = "mogomotsihs"
 # This is beautiful code
 @asynccontextmanager
 async def lifespan_local_tunnel(app: FastAPI):
-    status, tunnel_url, tunnel_process = create_tunnel(port=APP_PORT, subdomain=subdomain)
+    status, tunnel_url, tunnel_process = tunnel.create_tunnel(port=APP_PORT, subdomain=subdomain)
     if status:
         print(f"Tunnel created successfully! URL: {tunnel_url}")
     else:
         print(f"Failed to create tunnel. Error: {tunnel_url}")
         raise ProcessLookupError()
     yield
+    r = redis.from_url("redis://localhost")
+    r.publish("wa_messages_channel", "STOP")
+    r.close()
     tunnel_process.terminate()
 
 
@@ -60,13 +73,16 @@ async def lifespan_ngrok(app: FastAPI):
         #logger.info(f"~~ Listening: {listener.url()}")
     yield
     logger.info("Tearing Down ngrok Endpoint")
+    r = redis.from_url("redis://localhost")
+    r.publish("wa_messages_channel", "STOP")
+    r.close()
     ngrok.disconnect()
 
 
-tunnel = "lt"
-if tunnel == "ngrok":
+TUNNEL = os.getenv("TUNNEL")
+if TUNNEL == "ngrok":
     lifespan = lifespan_ngrok
-elif tunnel == "lt":
+elif TUNNEL == "lt":
     lifespan = lifespan_local_tunnel
 app = FastAPI(lifespan=lifespan)
 
@@ -96,23 +112,24 @@ config = SecurityConfig(
 )
 
 
-# TODO: Remember the list of trusted IP addresses? Use aiocache?
-@app.middleware("http")
-async def verify_facebook_calling(request: Request, call_next):
-    forwarded_for = request.headers.get("x-forwarded-for")
-    status, aso_ = get_autonomous_sys_org_name(forwarded_for)
+if TUNNEL == "lt":
+    # TODO: Remember the list of trusted IP addresses? Use aiocache?
+    @app.middleware("http")
+    async def verify_facebook_calling(request: Request, call_next):
+        forwarded_for = request.headers.get("x-forwarded-for")
+        status, aso_ = get_autonomous_sys_org_name(forwarded_for)
 
-    if status:
-        aso = aso_.setdefault("asn", None)
-        if aso == None or (not aso in ["32934", "63293"]):
+        if status:
+            aso = aso_.setdefault("asn", None)
+            if aso == None or (not aso in ["32934", "63293"]):
+                return JSONResponse(status_code=403, content={"detal": "Hostname not allowed"})
+                #raise HTTPException(status_code=403, detail="Hostname not allowed")
+        else:
             return JSONResponse(status_code=403, content={"detal": "Hostname not allowed"})
             #raise HTTPException(status_code=403, detail="Hostname not allowed")
-    else:
-        return JSONResponse(status_code=403, content={"detal": "Hostname not allowed"})
-        #raise HTTPException(status_code=403, detail="Hostname not allowed")
 
-    response = await call_next(request)
-    return response
+        response = await call_next(request)
+        return response
 
 
 def verify_signature(body: bytes, header_sig: str) -> bool:
@@ -136,7 +153,6 @@ async def webhook_verify(hub_mode: str, hub_verify_token: str, hub_challenge: st
 
 @app.post("/webhook")
 async def webhook_receive(request: Request):
-    logger.info(f"~~Host: {request.headers.get('host')}")
     raw_body = await request.body()    
     sig = request.headers.get("x-hub-signature-256")
     if not verify_signature(raw_body, sig):
@@ -146,6 +162,14 @@ async def webhook_receive(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
     # TODO: process payload as needed
+    
+    # This is not necessary for our workflow
+    body_bytes = await request.body()
+    logger.debug(f"payload: {payload}")
+    logger.debug(f"body: {body_bytes}")
+    r = redis.from_url("redis://localhost")
+    r.publish("wa_messages_channel", body_bytes)
+
     logger.info("Received webhook event")
     return JSONResponse({"status": "received"})
 
@@ -155,5 +179,15 @@ async def root(request: Request):
     return PlainTextResponse("WhatsApp SAMS Server is running.")
 
 
-if __name__ == "__main__":
-    uvicorn.run("server:app", port=APP_PORT)
+async def run_helper(port):
+    nn = pim.NoName()
+    uvi = lambda: uvicorn.run("Server.server:app", port=APP_PORT)
+    await asyncio.gather(
+        nn.process_messages(),
+        asyncio.to_thread(uvi)
+    )
+
+
+def run(port):
+    asyncio.run(run_helper(port))
+
