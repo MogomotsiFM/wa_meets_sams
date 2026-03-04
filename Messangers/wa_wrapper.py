@@ -1,4 +1,5 @@
 import os
+import copy
 import logging
 import aiohttp
 import socket
@@ -15,13 +16,6 @@ load_dotenv()
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
-# Old way (synchronous)
-#response = wrapper.send_template(phone_number, template_name, params)
-
-# New way (asynchronous)
-#response = await wrapper.send_template(phone_number, template_name, params)
-
-#Make sure to call these methods from within async functions or use asyncio.run() for the top-level call.
 
 Key = Literal["header", "body"]
 # The list(tuple) is used for positional parameters, while the dict allows for named parameters. 
@@ -40,13 +34,6 @@ class WhatsAppWrapper:
     A wrapper for the WhatsApp Cloud API to send template messages.
 
     The footer and button components of a template message do not have parameters in a template.
-
-    Because of this, the only way to send a document is to include it in the header of a template message.
-    So, if we receive a string as the header value, we assume it is a link to the document.
-
-    The wrapper lazily creates an ``aiohttp.ClientSession`` during construction and reuses it
-    for every request.  ``close()`` or asynchronous context manager protocol can be used to
-    clean up the session when the wrapper is no longer needed.
     """
     def __init__(self, bearer_token: str, phone_number_id: str):
         self.bearer_token = bearer_token
@@ -67,8 +54,6 @@ class WhatsAppWrapper:
         self.timeout = aiohttp.ClientTimeout(total=60, sock_read=30)
         self.session = aiohttp.ClientSession(timeout=self.timeout)#, trace_configs=[trace_config])
         #self.session = aiohttp.ClientSession(timeout=self.timeout, middlewares=[self.middleware])
-        #conn = aiohttp.TCPConnector(family=socket.AF_INET)
-        #self.session = aiohttp.ClientSession()
 
 
     async def send_opt_in_message(self, recipient_number, image_id, date, weekday, time):
@@ -119,13 +104,14 @@ class WhatsAppWrapper:
         data.add_field("messaging_product", "whatsapp")
         with open(file_path, "rb") as f:
             ext = file_path.split(".")[-1]
+            logger.debug(f"(WhatsappWrapper)  File extension: {ext}")
             data.add_field(
                 "file",
                 f,
                 filename=f"progress_report.{ext}",
                 content_type=content_type
             )
-            headers = self.headers
+            headers = copy.deepcopy(self.headers)
             # The aiohttp package will set the correct content type.
             # We are removing this one just in case we overwrite that value.
             # We have cached the original header just above so we can reset it. 
@@ -135,23 +121,7 @@ class WhatsAppWrapper:
             return response
 
 
-    async def send_report(self, recipient_number, report_url, doc_caption):
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": recipient_number,
-            "type": "document",
-            "document": {
-                "link": report_url,
-                "caption": doc_caption
-            }
-        }
-        response = await self._send_message("POST", "messages", payload=payload)
-        return response
-
-
     async def send_progress_report(self, recipient_number, report_id):
-        # This won't work. What if we treat it as a catalog template message?
         template_name = self.PROGRESS_REPORT_TEMPLATE_NAME
         params = {
             "header":{
@@ -169,14 +139,14 @@ class WhatsAppWrapper:
         The :attr:`session` is created in ``__init__`` and reused; this helper simply
         dispatches the correct verb.
         """
+        logger.info(f"(WhatsappWrapper)  Sending {method} message.")
+
         endpoint = self.base_url + route
         try:
             if method == "POST":
-                logger.info("(WhatsappWrapper)  Sending POST message.")
                 async with self.session.post(endpoint, json=payload, data=data, headers=self.headers) as response:
                     return await response.json()
             elif method == "PUT":
-                logger.info("(WhatsappWrapper)  Sending PUT message.")
                 async with self.session.put(endpoint, json=payload, data=data, headers=self.headers) as response:
                     return await response.json()
             else:
@@ -306,8 +276,8 @@ class WhatsAppWrapper:
                 "components": components,
             },
         }
-
         return await self._send_message("POST", "messages", payload=payload)
+
 
     async def close(self) -> None:
         """Shut down the underlying :class:`aiohttp.ClientSession`.
@@ -318,8 +288,10 @@ class WhatsAppWrapper:
         if not self.session.closed:
             await self.session.close()
 
+
     async def __aenter__(self):
         return self
+
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.close()

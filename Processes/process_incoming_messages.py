@@ -31,7 +31,7 @@ def init() -> WhatsAppWrapper:
 async def reader(channel: redis.client.PubSub):
     messanger = init()
     while True:
-        message = await channel.get_message(ignore_subscribe_messages=True, timeout=None)
+        message = await channel.get_message(ignore_subscribe_messages=True, timeout=1)
         if message is not None:
             json_msg = message["data"].decode()
             logger.info(f"(Reader) Message recieved: {json_msg}")
@@ -43,25 +43,54 @@ async def reader(channel: redis.client.PubSub):
         await asyncio.sleep(1)
 
 
-async def process_message(messanger, body_bytes):
+async def process_message(messanger: WhatsAppWrapper, body_bytes: bytes):
     body = json.loads(body_bytes)
     entries = body["entry"]
     entry = entries[0]
     changes = entry["changes"]
     change = changes[0]
-    value = change["value"]
-    msgs = value["messages"]
+    value: dict = change["value"]
+    msgs = value.setdefault("messages", [])
     for msg in msgs:
-        # Send read message
-        m = msg["text"]
-        #asyncio.sleep(1)
-        # Reply to the message
+        if msg["type"] == "text":
+            await handle_text_message(msg, messanger)
+        elif msg["type"] == "button":
+            await handle_button_message(msg, messanger)
+        else:
+            logger.info(f"(Message Processor) Message type {msg['type']} has not been implemented.")
+
+
+async def handle_button_message(msg: dict, messanger: WhatsAppWrapper):
+    logger.debug("(Reader) About to upload a progress report.")
+    try:
+        file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Reports\2026-03-04 06T44T31.975026\pending_delivery\Segomotsi KEAIKITSE - Tel0710491875 - EMailamg.seiphemo@gmail.com.pdf"
+        upload_re = await messanger.upload(file_path)
+        logger.info(f"(Reader)  Upload progress report response: {upload_re}")
+        await asyncio.sleep(1)
+        btn = msg["button"]
+        if btn["text"] == "Accept":
+            response = await messanger.send_progress_report(msg["from"], upload_re["id"])
+            logger.debug(f"(Reader)  Response from sending a progress report message: {response}")
+        else:
+            # We add them to the list of parents for whom we must print progress reports.
+            # We could also send a reminder a day before the day of collection.
+            logger.debug(f"(WhatsappWrapper)  The parent chose to come to school to collect the report.")
+    except Exception:
+        logger.info(f"(WhatsappWrapper) Could not upload {file_path} to WhatsApp server.")
+
+
+async def handle_text_message(msg: dict, messanger: WhatsAppWrapper):
+    logger.info(f"(WhatsappWrapper)  Received message: {msg['text']}")
+
+    try:
         img_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\school_emblem.png"
         upload_re = await messanger.upload(img_path)
-        logger.info(f"(Reader)  Upload response: {upload_re}")
-        #response = await self.messanger.send_opt_in_message(msg["from"], date="March 6", weekday="Friday", time="10.30am")
-        #logger.debug(f"(Reader)  Response from sending opt in message: {response}")
-
+        logger.info(f"(Reader)  Upload school emblem response: {upload_re}")
+        await asyncio.sleep(1)
+        response = await messanger.send_opt_in_message(msg["from"], upload_re["id"], date="March 6", weekday="Friday", time="10.30am")
+        logger.debug(f"(Reader)  Response from sending opt in message: {response}")
+    except Exception:
+        logger.info(f"(WhatsappWrapper) Could not upload {img_path} to WhatsApp server.")
 
 async def process_messages():
     r = await redis.from_url("redis://localhost")
