@@ -63,7 +63,7 @@ async def process_message(messanger: WhatsAppWrapper, body_bytes: bytes):
 async def handle_button_message(msg: dict, messanger: WhatsAppWrapper):
     logger.debug("(Reader) About to upload a progress report.")
     try:
-        file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Reports\2026-03-04 06T44T31.975026\pending_delivery\Segomotsi KEAIKITSE - Tel0710491875 - EMailamg.seiphemo@gmail.com.pdf"
+        file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\Mogomotsi KEAIKITSE - Tel0710491875 - EMailamg.seiphemo@gmail.com.pdf"
         upload_re = await messanger.upload(file_path)
         logger.info(f"(Reader)  Upload progress report response: {upload_re}")
         await asyncio.sleep(1)
