@@ -64,7 +64,7 @@ async def handle_button_message(msg: dict, messanger: WhatsAppWrapper):
     logger.debug("(Reader) About to upload a progress report.")
     try:
         file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\Mogomotsi KEAIKITSE - Tel0710491875 - EMailamg.seiphemo@gmail.com.pdf"
-        upload_re = await messanger.upload(file_path)
+        upload_re = await messanger.upload(file_path, "Progress Report")
         logger.info(f"(Reader)  Upload progress report response: {upload_re}")
         await asyncio.sleep(1)
         btn = msg["button"]
@@ -84,13 +84,14 @@ async def handle_text_message(msg: dict, messanger: WhatsAppWrapper):
 
     try:
         img_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\school_emblem.png"
-        upload_re = await messanger.upload(img_path)
+        upload_re = await messanger.upload(img_path, "school_emblem")
         logger.info(f"(Reader)  Upload school emblem response: {upload_re}")
         await asyncio.sleep(1)
         response = await messanger.send_opt_in_message(msg["from"], upload_re["id"], date="March 6", weekday="Friday", time="10.30am")
         logger.debug(f"(Reader)  Response from sending opt in message: {response}")
     except Exception:
         logger.info(f"(WhatsappWrapper) Could not upload {img_path} to WhatsApp server.")
+
 
 async def process_messages():
     r = await redis.from_url("redis://localhost")

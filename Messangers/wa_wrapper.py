@@ -94,7 +94,7 @@ class WhatsAppWrapper:
         return response
 
 
-    async def upload(self, file_path: str):
+    async def upload(self, file_path: str, filename: str):
         content_type, _ = mimetypes.guess_type(file_path)
         logger.info(f"(WhatsappWrapper)  content type: {content_type}")
         if content_type is None:
@@ -108,7 +108,7 @@ class WhatsAppWrapper:
             data.add_field(
                 "file",
                 f,
-                filename=f"progress_report.{ext}",
+                filename=f"{filename}.{ext}",
                 content_type=content_type
             )
             headers = copy.deepcopy(self.headers)

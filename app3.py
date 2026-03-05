@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 payload = {
     "messaging_product": "whatsapp",   
     "recipient_type": "individual",
-    "to": "27731948818",
+    "to": "27736820712",
     "type": "text",
     "text": {
         "preview_url": False,
@@ -24,7 +24,7 @@ payload = {
 
 async def run():   
     wa = WhatsAppWrapper(WA_SAMS_TOKEN, WA_SAMS_PHONE_ID)
-    response = await wa._send_message("POST", payload)
+    response = await wa._send_message(method="POST", route="messages", payload=payload)
     logging.getLogger().info("Response: ", response)
     print(f"Response: {response}")
     await wa.close()
