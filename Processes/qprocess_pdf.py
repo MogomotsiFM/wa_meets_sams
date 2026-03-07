@@ -20,6 +20,7 @@ class QProcessReports(QThread):
                 db_path=self.app_dirs.db_path,
                 reports_dir=self.app_dirs.reports_dir,
                 cover_pg_dir=self.app_dirs.cover_pgs_dir,
+                school_emblem_path=self.app_dirs.school_emblem_path,
                 dead_letter_dir=self.app_dirs.dead_letter_dir,
                 pending_delivery_dir=self.app_dirs.pending_delivery_dir
             )

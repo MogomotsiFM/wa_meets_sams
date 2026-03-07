@@ -230,7 +230,7 @@ def process_reports(db_path: str,
 if __name__ == "__main__":
     db_path = "TestingDB.mdb"
 
-    root_dir = "C:\\Users\GAME\\Desktop\\EdusolSAMS\\reports\\2026-02-20 22T58T10.473443"
+    root_dir = "C:\\Users\\GAME\\Desktop\\Projects\\whatsapp_sams\\Reports\\2026-03-04 06T44T31.975026"
     dead_letter_dir = Path( os.path.join(root_dir, "dead_letter") )
     os.makedirs(dead_letter_dir, exist_ok=True)
 
@@ -241,4 +241,12 @@ if __name__ == "__main__":
     reports_path = Path(reports_dir_)
 
     cover_pg_dir = Path( os.path.join(root_dir, "covers") )
-    process_reports(db_path, reports_path, cover_pg_dir, dead_letter_dir, pending_delivery_dir)
+    school_emblem_path = Path("C:\\Users\\GAME\\Desktop\\Projects\\whatsapp_sams\\Data\\school_emblem.png")
+    process_reports(db_path=db_path, 
+                    reports_dir=reports_path, 
+                    cover_pg_dir=cover_pg_dir, 
+                    school_emblem_path=school_emblem_path, 
+                    dead_letter_dir=dead_letter_dir, 
+                    pending_delivery_dir=pending_delivery_dir)
+    
+    
