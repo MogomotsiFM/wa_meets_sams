@@ -46,6 +46,9 @@ if not VERIFY_TOKEN or not APP_SECRET:
     raise SystemExit(1)
 
 
+# Redis channel to store responses to opt-in messages
+OPT_IN_RESPONSES = os.getenv("OPT_IN_RESPONSES")
+
 APP_PORT = 4001
 subdomain = "mogomotsihs"
 # This is beautiful code
@@ -158,17 +161,13 @@ async def webhook_receive(request: Request):
     if not verify_signature(raw_body, sig):
         raise HTTPException(status_code=403, detail="Invalid signature")
     try:
-        payload = await request.json()
+        payload = await request.body()
+        logger.debug(f"body: {payload}")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
-    # TODO: process payload as needed
     
-    # This is not necessary for our workflow
-    body_bytes = await request.body()
-    logger.debug(f"payload: {payload}")
-    logger.debug(f"body: {body_bytes}")
     r = redis.from_url("redis://localhost")
-    r.publish("wa_messages_channel", body_bytes)
+    r.publish(OPT_IN_RESPONSES, payload)
 
     logger.info("Received webhook event")
     return JSONResponse({"status": "received"})

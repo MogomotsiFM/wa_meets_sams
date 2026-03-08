@@ -9,6 +9,7 @@ from pydantic.dataclasses import dataclass
 from typing import Callable
 
 import redis.asyncio as redis
+import redis.client as client
 
 from pathlib import Path
 
@@ -21,6 +22,13 @@ STOPWORD = "STOP"
 
 logger = logging.getLogger()
 
+PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
+UPLOADED_ARTIFACTS = os.getenv("UPLOADED_ARTIFACTS")
+OPT_IN_RESPONSES = os.getenv("OPT_IN_RESPONSES")
+if PENDING_DELIVERY_FILENAMES is None or UPLOADED_ARTIFACTS is None or OPT_IN_RESPONSES is None:
+    raise ValueError("All the three redis channel names should be define in environment variable.")
+
+
 def init() -> WhatsAppWrapper:
     WA_SAMS_TOKEN = os.getenv("WA_SAMS_TOKEN")
     WA_SAMS_PHONE_ID = os.getenv("WA_SAMS_PHONE_ID")
@@ -28,8 +36,8 @@ def init() -> WhatsAppWrapper:
         raise ValueError("WA_SAMS_TOKEN and WA_SAMS_PHONE_ID environment variables should be set.")
     
     messanger = WhatsAppWrapper(bearer_token=WA_SAMS_TOKEN, phone_number_id=WA_SAMS_PHONE_ID)
-    logger.debug(f"(NoName)  token: {WA_SAMS_TOKEN}")
-    logger.debug(f"(NoName)  Phone Id: {WA_SAMS_PHONE_ID}")
+    logger.debug(f"(MessageProcessors)  token: {WA_SAMS_TOKEN}")
+    logger.debug(f"(MessageProcessors)  Phone Id: {WA_SAMS_PHONE_ID}")
 
     return messanger
 
@@ -49,7 +57,7 @@ async def reader(channel: redis.client.PubSub):
         await asyncio.sleep(1)
 
 
-async def reader_(channel: redis.client.PubSub, messanger: WhatsAppWrapper, process_message: Callable[[WhatsAppWrapper, bytes], None]):
+async def reader_(channel: client.PubSub, messanger: WhatsAppWrapper, process_message):#: Callable[[WhatsAppWrapper, bytes], None]):
     while True:
         message = await channel.get_message(ignore_subscribe_messages=True, timeout=1)
         if message is not None:
@@ -77,7 +85,7 @@ async def process_message(messanger: WhatsAppWrapper, body_bytes: bytes):
         elif msg["type"] == "button":
             await handle_button_message(msg, messanger)
         else:
-            logger.info(f"(Message Processor) Message type {msg['type']} has not been implemented.")
+            logger.info(f"(MessageProcessors) Message type {msg['type']} has not been implemented.")
 
 
 @dataclass
@@ -98,31 +106,39 @@ async def upload_data(r:redis.Redis, messanger: WhatsAppWrapper, file_path: Path
         content_type, _ = mimetypes.guess_type(file_path)
         if not content_type is None:
             if "image" in content_type:
-                logger.info("(MessageProcessor) Uploading the school emblem.")
-                upload_emblem_response = await messanger.upload(file_path, "school_emblem")
+                logger.info("(MessageProcessors) Uploading the school emblem.")
+                upload_response = await messanger.upload(file_path, "school_emblem")
+                logger.info(f"(MessageProcessors) Upload emblem response: {upload_response}")
             else:
-                logger.info(f"(MessageProcessor) Uploading progress report: {file_path}")
+                logger.info(f"(MessageProcessors) Uploading progress report: {file_path}")
                 upload_response = await messanger.upload(file_path, "school_report")
-            logger.info(f"(MessageProcessor) Upload report response: {upload_response}")
+                logger.info(f"(MessageProcessors) Upload report response: {upload_response}")
 
-            msg = UploadedData(
-                upload_id = upload_response["id"],
-                file_path = file_path,
-                send_retries = 0
-            )
-            r.publish("uploaded_files", str(msg))
-            await asyncio.sleep(1)
-    except:
-        logger.info("(MessageProcessor) Failed to upload the school emblem.")
+            if upload_response.setdefault("id", None) is not None:
+                msg = UploadedData(
+                    upload_id = upload_response["id"],
+                    file_path = file_path,
+                    send_retries = 0
+                )
+                r.publish(UPLOADED_ARTIFACTS, str(msg))
+                await asyncio.sleep(1)
+            else:
+                r.publish(PENDING_DELIVERY_FILENAMES, str(file_path))
+            
+    except Exception as exp:
+        logger.info("(MessageProcessors) Failed to upload the school emblem.")
+        logger.info(f"(MessageProcessors) Error: {exp}")
         # Put the file path back into the queue so we try uploading it again.
-        r.publish("files_pending_delivery", file_path)
+        r.publish(PENDING_DELIVERY_FILENAMES, str(file_path))
 
 
 async def send_opt_in_messages(r: redis.Redis, messanger:WhatsAppWrapper, message: UploadedData, school_emblem_id:str):
     #r = await redis.from_url("redis://localhost")
-
     try:
         filepath = message.file_path
+        if message.send_retries > 3:
+            logger.info(f"(MessageProcessor)  Message retried many times. It is possible that the phone number is not on WhatsApp.")
+            # Add the message the dead letter queue
         matches: list[str] = re.findall("(?<=Tel)[ \d]{10,}", str(filepath))
         response = None
         for phone_number in matches:
@@ -141,15 +157,35 @@ async def send_opt_in_messages(r: redis.Redis, messanger:WhatsAppWrapper, messag
                 file_path = message.file_path,
                 send_retries = message.send_retries + 1
             )
-            r.publish("uploaded_files", str(message))    
-    except Exception:
-        logger.info(f"(WhatsappWrapper) Could send opt-in message to WhatsApp servers.")
+            r.publish(UPLOADED_ARTIFACTS, str(message))    
+    except Exception as exp:
+        logger.info(f"(MessageProccessor) Could send opt-in message to WhatsApp servers.")
+        logger.info(f"(MessageProccessor)  Error: {exp}")
         message = UploadedData(
             upload_id = message.upload_id,
             file_path = message.file_path,
             send_retries = message.send_retries + 1
         )
-        r.publish("uploaded_files", str(message))
+        r.publish(UPLOADED_ARTIFACTS, str(message))
+
+
+async def handle_button_message_(r: redis.Redis, msg: dict, messanger: WhatsAppWrapper):
+    logger.debug("(Reader) About to upload a progress report.")
+    try:
+        context = msg["context"]
+        opt_in_id = context["id"]
+        report_id = r.get(opt_in_id)
+        btn = msg["button"]
+        if btn["text"] == "Accept":
+            response = await messanger.send_progress_report(msg["from"], report_id)
+            logger.debug(f"(MessageProcessor)  Response from sending a progress report message: {response}")
+        else:
+            # We add them to the list of parents for whom we must print progress reports.
+            # We could also send a reminder a day before the day of collection.
+            logger.debug(f"(MessageProcessor)  The parent chose to come to school to collect the report.")
+            logger.debug("(MessageProcessor)  Add the message to dead letter queue. Decrypt if first.")
+    except Exception as exp:
+        logger.info(f"(MessageProcessor) Error: {exp}")
 
 
 async def handle_button_message(msg: dict, messanger: WhatsAppWrapper):
@@ -194,4 +230,23 @@ async def process_messages():
         await pubsub.psubscribe("wa_messages_channel")
         
         await asyncio.create_task(reader(pubsub))
-    
+        
+
+async def process_messages_():
+    r = await redis.from_url("redis://localhost")
+    #pubsub = r.pubsub()
+    #await pubsub.psubcribe("wa_messages_channel")
+    #await asyncio.create_task(reader(pubsub))
+    async with r.pubsub() as pending_delivery_channel:
+        async with r.pubsub() as uploaded_artifacts_channel:
+            async with r.pubsub as opt_in_responses_channel:
+                await pending_delivery_channel.psubscribe(PENDING_DELIVERY_FILENAMES)
+                await asyncio.create_task(reader(pending_delivery_channel))
+
+                await uploaded_artifacts_channel.psubscribe(UPLOADED_ARTIFACTS)
+                await asyncio.create_tast(reader(uploaded_artifacts_channel))
+
+                await opt_in_responses_channel.psubscribe(OPT_IN_RESPONSES)
+                await asyncio.create_task(reader(opt_in_responses_channel))
+
+
