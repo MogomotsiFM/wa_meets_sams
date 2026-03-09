@@ -45,7 +45,6 @@ if not VERIFY_TOKEN or not APP_SECRET:
     logger.error("Environment variables WHATSAPP_VERIFY_TOKEN and WHATSAPP_APP_SECRET must be set")
     raise SystemExit(1)
 
-
 # Redis channel to store responses to opt-in messages
 OPT_IN_RESPONSES = os.getenv("OPT_IN_RESPONSES")
 
@@ -178,11 +177,27 @@ async def root(request: Request):
     return PlainTextResponse("WhatsApp SAMS Server is running.")
 
 
+async def upload_files():
+    from redis.asyncio import Redis
+    r = await Redis.from_url("redis://localhost")
+
+    await asyncio.sleep(20)
+
+    img_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\school_emblem.png"
+    await r.publish("pending_delivery_filenames", img_path)
+    
+    await asyncio.sleep(1)
+
+    file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\Mogomotsi KEAIKITSE - Tel0731948818 - EMailamg.seiphemo@gmail.com.pdf"
+    await r.publish("pending_delivery_filenames", file_path)
+
+
 async def run_helper(port):
     uvi = lambda: uvicorn.run("Server.server:app", port=APP_PORT)
     await asyncio.gather(
-        pim.process_messages(),
-        asyncio.to_thread(uvi)
+        pim.process_messages_(),
+        asyncio.to_thread(uvi),
+        upload_files()
     )
 
 

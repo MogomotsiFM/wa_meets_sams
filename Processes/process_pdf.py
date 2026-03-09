@@ -196,7 +196,8 @@ def process_reports(db_path: str,
 
     r = redis.from_url("redis://localhost")
     # The first message should be the path to the school emblem
-    r.publish("files_pending_delivery", str(school_emblem_path))
+    PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
+    r.publish(PENDING_DELIVERY_FILENAMES, str(school_emblem_path))
 
     for report_path in reports_dir.iterdir():
         if report_path.is_file() and report_path.suffix.lower() == ".pdf":
@@ -217,7 +218,7 @@ def process_reports(db_path: str,
                     writer.encrypt(report.encryption_key)
                     output_path = os.path.join(pending_delivery_dir, f"{report.filename}.pdf")
 
-                    r.publish("files_pending_delivery", output_path)
+                    r.publish(PENDING_DELIVERY_FILENAMES, output_path)
                 else:
                     output_path = os.path.join(dead_letter_dir, f"{report.filename}.pdf")
 
