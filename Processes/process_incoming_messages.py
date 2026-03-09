@@ -97,7 +97,7 @@ async def upload_data(r:redis.Redis, messanger: WhatsAppWrapper, message):
         await r.publish(PENDING_DELIVERY_FILENAMES, str(file_path))
 
 
-async def send_opt_in_messages2(r: redis.Redis, messanger: WhatsAppWrapper):
+async def send_opt_in_messages(r: redis.Redis, messanger: WhatsAppWrapper):
     logger.info("Re mo teng")
     to_send = None
     message = yield to_send
@@ -114,10 +114,10 @@ async def send_opt_in_messages2(r: redis.Redis, messanger: WhatsAppWrapper):
         msg = message["data"].decode()
         msg_json = UploadedData(**json.loads(msg))
         logger.info(f"(Send Opt-In Messages) Opt-in message destination: {msg_json}")
-        await send_opt_in_messages_helper2(r=r, messanger=messanger, message=msg_json, school_emblem_id=school_emblem_id)
+        await send_opt_in_messages_helper(r=r, messanger=messanger, message=msg_json, school_emblem_id=school_emblem_id)
 
 
-async def send_opt_in_messages_helper2(r: redis.Redis, messanger:WhatsAppWrapper, message: UploadedData, school_emblem_id: str):
+async def send_opt_in_messages_helper(r: redis.Redis, messanger:WhatsAppWrapper, message: UploadedData, school_emblem_id: str):
     try:
         logger.info("About to send opt-in message")
         if message.send_retries > 3:
@@ -216,13 +216,13 @@ def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: red
     return wrapper
 
 
-async def process_messages_():
+async def process_messages():
     r = await redis.from_url("redis://localhost")
     messanger = init()
 
     async with r.pubsub() as pubsub:
         pending = signature_preserving_decorator(upload_data, messanger, r)
-        uploaded = send_opt_in_messages2(r=r, messanger=messanger)
+        uploaded = send_opt_in_messages(r=r, messanger=messanger)
         # The first message pushed into a generator has to be None.
         await uploaded.asend(None)
         opt_in = signature_preserving_decorator(handle_opt_in_responses, messanger, r)

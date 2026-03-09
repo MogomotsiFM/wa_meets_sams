@@ -195,7 +195,7 @@ async def upload_files():
 async def run_helper(port):
     uvi = lambda: uvicorn.run("Server.server:app", port=APP_PORT)
     await asyncio.gather(
-        pim.process_messages_(),
+        pim.process_messages(),
         asyncio.to_thread(uvi),
         upload_files()
     )
