@@ -7,8 +7,8 @@ import mimetypes
 
 import functools
 
-from pydantic.dataclasses import dataclass
-from typing import Callable
+import dataclasses
+from typing import Literal, List
 
 import redis.asyncio as redis
 import redis.client as client
@@ -56,15 +56,15 @@ def init() -> WhatsAppWrapper:
     return messanger
 
 
-@dataclass
+@dataclasses.dataclass
 class UploadedData:
     upload_id: str
     file_path: Path
     send_retries: int
 
     def __str__(self):
-        path = str(self.file_path).replace("\\", "\\\\")
-        return f'{{"upload_id":"{self.upload_id}", "file_path":"{path}", "send_retries":{self.send_retries}}}'
+        d = dataclasses.asdict(self)
+        return json.dumps(d)
 
 
 async def upload_data(r:redis.Redis, messanger: WhatsAppWrapper, message):
@@ -110,6 +110,8 @@ async def upload_data(r:redis.Redis, messanger: WhatsAppWrapper, message):
 async def send_opt_in_messages(r: redis.Redis, messanger: WhatsAppWrapper):
     logger.info("Re mo teng")
     to_send = None
+    # This is part of sending data into a generator.
+    # The other half is calling the send method of the generator with the data.
     message = yield to_send
 
     logger.info("(Send Opt-In Messages) About to send an opt-in message")
