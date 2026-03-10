@@ -109,7 +109,7 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
             else:
                 await r.publish(PENDING_DELIVERY_FILENAMES, str(file_path))
         else:
-            error_msg = "Artifact has unknown content type"
+            error_msg = f"Artifact has unknown content type: {file_path}"
             logger.error(error_msg)
             raise ValueError(error_msg)
     except Exception as exp:
@@ -127,6 +127,7 @@ class OptInStatus:
     # It is possible that a parent has multiple kids at a school
     # This keeps the list of reports associated with that parent's phone number
     reports: List[Path]
+    reports_status: List[Literal["sent", "not-sent"]]
 
     def __str__(self):
         d = dataclasses.asdict(self)
@@ -135,10 +136,8 @@ class OptInStatus:
 
     @staticmethod
     def create(data: str):
-        logger.info(f"Inside: {data}")
         j = json.loads(data)
         obj = OptInStatus(**j)
-        logger.info(f"Deep inside: {obj}")
         return obj
 
 
@@ -186,10 +185,10 @@ async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: Whats
 
     while True:
         message = yield to_send
-        msg = message["data"].decode()
-        msg_json = UploadedData(**json.loads(msg))
-        logger.info(f"(Send Opt-In Messages) Opt-in message destination: {msg_json}")
-        await send_opt_in_messages_helper(r=r, kv=kv, messanger=messanger, message=msg_json, school_emblem_id=school_emblem_id)
+        msg_str = message["data"].decode()
+        msg = UploadedData(**json.loads(msg_str))
+        logger.info(f"(Send Opt-In Messages) Opt-in message destination: {msg}")
+        await send_opt_in_messages_helper(r=r, kv=kv, messanger=messanger, message=msg, school_emblem_id=school_emblem_id)
 
 
 async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger:WhatsAppWrapper, message: UploadedData, school_emblem_id: str):
@@ -203,7 +202,6 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
             logger.info(f"(MessageProcessor)  Message retried many times. It is possible that the phone number is not on WhatsApp.")
             # TODO: Add the message to the dead letter queue
             return
-        response = None
         filepath = message.file_path
         matches: list[str] = re.findall("(?<=Tel)[ \d]{10,}", str(filepath))
         for phone_number in matches:
@@ -223,37 +221,46 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                 messages = response.setdefault("messages", [])
                 if len(messages) > 0 and not messages[0].setdefault("id", None) is None:
                     response_msg = messages[0]
-                    await kv.set(response_msg["id"], message.upload_id)
+                    await kv.set(response_msg["id"], str(message))
 
-                    opt_in_status = OptInStatus("Unknown", response_msg["id"], [message.file_path])
-                    await kv.set(phone_number, str(opt_in_status))
+                    ois = OptInStatus("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
+                    await kv.set(phone_number, str(ois))
                     return
             else:
-                logger.info("An opt-in message has already been sent to this number because it is associated with at least two reports")
-                opt_in_status = OptInStatus.create(data.decode())
-                if not opt_in_status.status == "Unknown":
-                    logger.debug(f"Opt-in status: {opt_in_status.status}")
-                    key = f"{opt_in_status.opt_in_msg_id}_{len(opt_in_status.reports)}" 
-                    # Add the progress report to the KV store of report that need to be sent.
-                    await kv.set(key, message.upload_id)
-
-                    logger.info(f"Reports: {opt_in_status.reports}")
-                    opt_in_status.reports.append(message.file_path)
-                    logger.info(f"Other reports: {opt_in_status.reports}")
-                    new_opt_in_status = OptInStatus(opt_in_status.status, opt_in_status.opt_in_msg_id, opt_in_status.reports)
-                    await kv.set(phone_number, str(new_opt_in_status))
-
-                    # Emulate the parent accepting/declining the offer to opt-in request.
-                    msg = OptInStatus.emulate_decision(phone_number, key, opt_in_status.status)
-                    await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
-
+                # What is the chance the application crashed, was restarted, and we have seen the filename before?
+                ois = OptInStatus.create(data.decode())
+                try:
+                    idx = ois.reports.index(message.file_path)
+                    logger.info(f"(MessageProcessors) The report at index {idx} has already been processed.")
+                    logger.debug(f"(MessageProcessor) Filename: {message.file_path}")
                     return
-                else:
-                    logger.debug("Parent has not responded to the opt-in message that we sent.")
-                    await asyncio.sleep(5)
-                    await r.publish(UPLOADED_ARTIFACTS, str(message))
+                except Exception as exp:
+                    logger.info(f"(MessageProcessor) {exp}")
+                    logger.info("An opt-in message has already been sent to this number because it is associated with at least two reports")
+                    # ois = opt_in_status
+                    
+                    if not ois.status == "Unknown":
+                        logger.debug(f"Opt-in status: {ois.status}")
+                        key = f"{ois.opt_in_msg_id}_{len(ois.reports)}" 
+                        # Add the progress report to the KV store of report that need to be sent.
+                        await kv.set(key, str(message))
 
-                    return
+                        ois.reports.append(message.file_path)
+                        ois.reports_status.append("not-sent")
+                        new_opt_in_status = OptInStatus(ois.status, ois.opt_in_msg_id, ois.reports, ois.reports_status)
+                        await kv.set(phone_number, str(new_opt_in_status))
+
+                        # Emulate the parent accepting/declining the offer to opt-in request.
+                        msg = OptInStatus.emulate_decision(phone_number, key, ois.status)
+                        await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
+
+                        return
+                    else:
+                        logger.debug("Parent has not responded to the opt-in message that we sent.")
+                        await asyncio.sleep(5)
+                        await r.publish(UPLOADED_ARTIFACTS, str(message))
+
+                        return
 
         await asyncio.sleep(10)
         # At this point we failed to send the opt-in message for whatever reason
@@ -281,51 +288,57 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
         kv: Used as a key-value store
     """
     logger.debug("(Handle Opt-In Response) About to upload a progress report.")
+    raw_msg = message["data"].decode()
+    logger.info(f"(Handle Opt-In Response) Message recieved: {raw_msg}")
     try:
-        raw_msg = message["data"].decode()
-        logger.info(f"(Handle Opt-In Response) Message recieved: {raw_msg}")
-
         msgs = json.loads(raw_msg)
         msg = msgs[0]
         context = msg["context"]
         opt_in_id = context["id"]
-        report_id = await kv.get(opt_in_id)
-        report_id = report_id.decode('utf-8')
+        uploaded_data = await kv.get(opt_in_id)
+        uploaded_data = UploadedData.create(uploaded_data.decode())
+        report_id = uploaded_data.upload_id
         btn = msg.setdefault("button", None)
-        if not btn is None:
+        if btn is not None:
             data = await kv.get(msg["from"])
             # opt_in_info = oii
             oii = OptInStatus.create(data.decode())
             oii.status = btn["text"]
             await kv.set(msg["from"], str(oii))
 
-        if btn["text"] == "Accept":
-            logger.info(f"Source phone number: {msg['from']}, report_id: {report_id}({type(report_id)})")
-            response = await messanger.send_progress_report(str(msg["from"]), str(report_id))
-            logger.debug(f"(MessageProcessor)  Response from sending a progress report message: {response}")
+            # Any chance that the application crashed, was restarted, and some of the messages had already been sent?'
+            # list::index raises an exception if a value is not found. We should always find what we are looking for.
+            idx = oii.reports.index(uploaded_data.file_path)
+            if not oii.reports_status[idx] == "sent":
+                if btn["text"] == "Accept":
+                    logger.info(f"Source phone number: {msg['from']}, report_id: {report_id}({type(report_id)})")
+                    response = await messanger.send_progress_report(str(msg["from"]), str(report_id))
+                    logger.debug(f"(MessageProcessor)  Response from sending a progress report message: {response}")
 
-            error_code = response.setdefault("status_code", 403)
-            if error_code < 300:
-                logger.info("The progress report was successfully sent to WA.")
-            elif error_code < 500: # Client error, we can only adjust our request parameters.
-                error_msg = f'Client error: {response["message"]}'
-                logger.info(error_msg)
-                raise ValueError(error_msg)
-            else: # Server error
-                logger.error(f'Server error: {response["message"]}')
-                # TODO: Backoff using aiohttp library??
-                await kv.set(opt_in_id, report_id)
-                await asyncio.sleep(15)
-                await r.publish(OPT_IN_RESPONSES, raw_msg)
-        elif btn["text"] == "Decline":
-            # We add them to the list of parents for whom we must print progress reports.
-            # We could also send a reminder a day before the day of collection.
-            logger.debug(f"(MessageProcessor)  The parent chose to come to school to collect the report.")
-            logger.debug("(MessageProcessor)  Add the message to dead letter queue. Decrypt if first.")
-        else:
-            raise ValueError("Incorrect message format. Expected a button field and none was found.")
+                    status = response["messages"][0]["message_status"]
+                    logger.info(f"(MessageProcessor) Opt in status: {status}")
+                    if status == "accepted":
+                        oii.reports_status[idx] = "sent"
+                        await kv.set(msg["from"], str(oii))
+
+                        logger.info("The progress report was successfully sent to WA.")
+                    else: # Server error
+                        logger.error(f'Server error: {response["message"]}')
+                        # TODO: Backoff using aiohttp library??
+                        await kv.set(opt_in_id, str(uploaded_data))
+                        await asyncio.sleep(15)
+                        await r.publish(OPT_IN_RESPONSES, raw_msg)
+                elif btn["text"] == "Decline":
+                    # We add them to the list of parents for whom we must print progress reports.
+                    # We could also send a reminder a day before the day of collection.
+                    logger.debug(f"(MessageProcessor)  The parent chose to come to school to collect the report.")
+                    logger.debug("(MessageProcessor)  Add the message to dead letter queue. Decrypt if first.")
+                else:
+                    raise ValueError("Incorrect message format. Expected a button field and none was found.")
     except Exception as exp:
         logger.info(f"(MessageProcessor) Error: {exp}")
+        await asyncio.sleep(15)
+        await r.publish(OPT_IN_RESPONSES, raw_msg)
 
 
 def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: redis.Redis, kv: redis.Redis):
@@ -338,6 +351,7 @@ def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: red
 async def process_messages():
     r  = await redis.from_url("redis://localhost", db=0)
     kv = await redis.from_url("redis://localhost", db=1)
+    
     messanger = init()
 
     async with r.pubsub() as pubsub:
@@ -354,12 +368,12 @@ async def process_messages():
                 logger.info(f"Message: {message}")
                 channel = message["channel"].decode()
                 if channel == UPLOADED_ARTIFACTS:
-                    try:
-                        await asyncio.create_task(uploaded.asend(message))
-                    except Exception as exp:
-                        logger.info(exp)
-                        await asyncio.sleep(1.0)
-                        await r.publish(UPLOADED_ARTIFACTS, message["data"].decode())
+                    #try:
+                    await asyncio.create_task(uploaded.asend(message))
+                    #except Exception as exp:
+                    #    logger.info(exp)
+                    #    await asyncio.sleep(1.0)
+                    #    await r.publish(UPLOADED_ARTIFACTS, message["data"].decode())
                 elif channel == PENDING_DELIVERY_FILENAMES:
                     await pending(message)
                 elif channel == OPT_IN_RESPONSES:

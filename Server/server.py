@@ -172,15 +172,14 @@ async def webhook_receive(request: Request):
     if not verify_signature(raw_body, sig):
         raise HTTPException(status_code=403, detail="Invalid signature")
     try:
-        payload = await request.body()
+        payload = await request.json()
         logger.debug(f"body: {payload}")
+        msgs = extract_message(raw_body)
+        if len(msgs) > 0:
+            r = redis.from_url("redis://localhost")
+            r.publish(OPT_IN_RESPONSES, json.dumps(msgs))
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
-    
-    msgs = extract_message(payload)
-    if len(msgs) > 0:
-        r = redis.from_url("redis://localhost")
-        r.publish(OPT_IN_RESPONSES, json.dumps(msgs))
 
     logger.info("Received webhook event")
     return JSONResponse({"status": "received"})
