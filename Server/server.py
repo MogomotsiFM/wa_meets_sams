@@ -134,6 +134,18 @@ if TUNNEL == "lt":
         return response
 
 
+def extract_message(raw_msg: str)->list:
+    body = json.loads(raw_msg)
+    entries = body["entry"]
+    entry = entries[0]
+    changes = entry["changes"]
+    change = changes[0]
+    value: dict = change["value"]
+    msgs = value.setdefault("messages", [])
+
+    return msgs
+
+
 def verify_signature(body: bytes, header_sig: str) -> bool:
     if not header_sig:
         return False
@@ -165,8 +177,10 @@ async def webhook_receive(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
     
-    r = redis.from_url("redis://localhost")
-    r.publish(OPT_IN_RESPONSES, payload)
+    msgs = extract_message(payload)
+    if len(msgs) > 0:
+        r = redis.from_url("redis://localhost")
+        r.publish(OPT_IN_RESPONSES, json.dumps(msgs))
 
     logger.info("Received webhook event")
     return JSONResponse({"status": "received"})
@@ -181,16 +195,21 @@ async def upload_files():
     from redis.asyncio import Redis
     r = await Redis.from_url("redis://localhost")
 
-    await asyncio.sleep(20)
+    await asyncio.sleep(45)
 
     img_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\school_emblem.png"
     await r.publish("pending_delivery_filenames", img_path)
     
-    await asyncio.sleep(1)
+    await asyncio.sleep(2)
 
     file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\Mogomotsi KEAIKITSE - Tel0731948818 - EMailamg.seiphemo@gmail.com.pdf"
     await r.publish("pending_delivery_filenames", file_path)
 
+    await asyncio.sleep(2)
+    
+    file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\Segomotsi KEAIKITSE - Tel27731948818 - EMailamg.seiphemo@gmail.com.pdf"
+    await r.publish("pending_delivery_filenames", file_path)
+    
 
 async def run_helper(port):
     uvi = lambda: uvicorn.run("Server.server:app", port=APP_PORT)
