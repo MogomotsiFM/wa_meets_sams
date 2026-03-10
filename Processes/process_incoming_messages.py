@@ -107,6 +107,30 @@ async def upload_data(r:redis.Redis, messanger: WhatsAppWrapper, message):
         await r.publish(PENDING_DELIVERY_FILENAMES, str(file_path))
 
 
+@dataclasses.dataclass
+class OptInStatus:
+    status: Literal["Unknown", "Accept", "Decline"]
+    #phone_number: str
+    opt_in_msg_id: str
+    # It is possible that a parent has multiple kids at a school
+    # This keeps the list of reports associated with that parent's phone number
+    reports: List[Path]
+
+    def __str__(self):
+        d = dataclasses.asdict(self)
+        return json.dumps(d)
+
+
+    @staticmethod
+    def create(data: str):
+        j = json.loads(data)
+        return OptInStatus(**j)
+
+    @staticmethod
+    def simulate_parent_decision(decision: Literal["Accept", "Decline"]):
+        msg = 
+
+
 async def send_opt_in_messages(r: redis.Redis, messanger: WhatsAppWrapper):
     logger.info("Re mo teng")
     to_send = None
@@ -144,18 +168,34 @@ async def send_opt_in_messages_helper(r: redis.Redis, messanger:WhatsAppWrapper,
             if phone_number[0] == '0':
                 phone_number = re.sub("0", "27", phone_number)
             logger.info(f"(MessageProcessor)  Extracted phone number: {phone_number}")
-            response = await messanger.send_opt_in_message(phone_number, school_emblem_id, date="March 6", weekday="Friday", time="10.30am")
-            logger.debug(f"(MessageProcessors)  Response from sending opt in message: {response}")
-            """
-             Response from sending opt in message: {
-             'messaging_product': 'whatsapp', 'contacts': [{'input': '27731948818', 'wa_id': '27731948818'}], 'messages': [{'id': 'wamid.HBgLMjc3MzE5NDg4MTgVAgARGBI3QTkwRjhBM0Q2MzJGRUI1NDEA', 'message_status': 'accepted'}]}
-            """
-            messages = response.setdefault("messages", [])
-            if len(messages) > 0 and not messages[0].setdefault("id", None) is None:
-                response_msg = messages[0]
-                await r.set(response_msg["id"], message.upload_id)
-                return
 
+            # Check the phone number in the status KV store
+            data = await r.get(phone_number)
+            if data is None:
+                response = await messanger.send_opt_in_message(phone_number, school_emblem_id, date="March 6", weekday="Friday", time="10.30am")
+                logger.debug(f"(MessageProcessors)  Response from sending opt in message: {response}")
+            
+                messages = response.setdefault("messages", [])
+                if len(messages) > 0 and not messages[0].setdefault("id", None) is None:
+                    response_msg = messages[0]
+                    await r.set(response_msg["id"], message.upload_id)
+
+                    opt_in_status = OptInStatus("Unknown", response_msg["id"], [message.file_path])
+                    await r.set(phone_number, str(opt_in_status))
+                    return
+            else:
+                logger.info("An opt-in message has already been sent to this number because it is associated with at least two reports")
+                opt_in_status = OptInStatus.create(data.decode())
+                key = f"opt_in_status.opt_in_msg_id_{len(opt_in_status.reports)}" 
+                # Add the progress report to the KV store of report that need to be sent.
+                await r.set(key, message.upload_id)
+
+                # Simulate the parent accepting/declining the offer to opt-in request.
+
+
+
+        # At this point we failed to send the opt-in message for whatever reason
+        # So, we insert the message so we have another chance at processing it.
         message = UploadedData(
             upload_id = message.upload_id,
             file_path = message.file_path,
