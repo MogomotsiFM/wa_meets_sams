@@ -69,6 +69,11 @@ class UploadedData:
         d = dataclasses.asdict(self)
         return json.dumps(d)
 
+    @staticmethod
+    def create(data: str):
+        j = json.loads(data)
+        return UploadedData(**j)
+
 
 async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper, message):
     """
