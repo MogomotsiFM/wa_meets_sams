@@ -201,7 +201,8 @@ async def upload_files():
     
     await asyncio.sleep(2)
 
-    file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\Mogomotsi KEAIKITSE - Tel0731948818 - EMailamg.seiphemo@gmail.com.pdf"
+    #file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\Mogomotsi KEAIKITSE - Tel0731948818 - EMailamg.seiphemo@gmail.com.pdf"
+    file_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\Mogomotsi KEAIKITSE - Tel0710491875Tel0731948818 - EMailamg.seiphemo@gmail.com.pdf"
     await r.publish("pending_delivery_filenames", file_path)
 
     await asyncio.sleep(2)

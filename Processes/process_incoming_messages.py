@@ -17,7 +17,7 @@ from pathlib import Path
 
 from Messangers.wa_wrapper import WhatsAppWrapper
 
-from .coms_data_structures import UploadedData, ReportDeliveryInfo
+from .comms_data_structs import UploadedData, ReportDeliveryInfo
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -136,89 +136,89 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
     kv: Used as a key-value store
     """
     try:
+        # We have not found a number that is on WA
+        wa_number_found = False
+
         logger.info("About to send opt-in message")
-        if message.send_retries > 3:
-            logger.info(f"(MessageProcessor)  Message retried many times. It is possible that the phone number is not on WhatsApp.")
-            # TODO: Add the message to the dead letter queue
-            return
-        filepath = message.file_path
-        matches: list[str] = re.findall("(?<=Tel)[ \d]{10,}", str(filepath))
-        for phone_number in matches:
-            phone_number = phone_number.strip()
-            if phone_number[0] == '0':
-                phone_number = re.sub("0", "27", phone_number)
-            logger.info(f"(MessageProcessor)  Extracted phone number: {phone_number}")
+        if message.send_retries <= 5:
+            filepath = message.file_path
+            matches: list[str] = re.findall("(?<=Tel)[ \d]{10,}", str(filepath))
+            for phone_number in matches:
+                phone_number = phone_number.strip()
+                if phone_number[0] == '0':
+                    phone_number = re.sub("0", "27", phone_number)
+                logger.info(f"(MessageProcessor)  Extracted phone number: {phone_number}")
 
-            # Check the phone number in the status KV store
-            data = await kv.get(phone_number)
-            logger.debug(f"\nData: {data}\n")
-            if data == None:
-                logger.debug(f"Sending an opt-in message for the first time: {phone_number}")
-                response = await messanger.send_opt_in_message(phone_number, school_emblem_id, date="March 6", weekday="Friday", time="10.30am")
-                logger.debug(f"(MessageProcessors)  Response from sending opt in message: {response}")
-            
-                messages = response.setdefault("messages", [])
-                if len(messages) > 0 and not messages[0].setdefault("id", None) is None:
-                    response_msg = messages[0]
-                    await kv.set(response_msg["id"], str(message))
+                # Check the phone number in the status KV store
+                data = await kv.get(phone_number)
+                logger.debug(f"\nData: {data}\n")
+                if data == None:
+                    logger.debug(f"Sending an opt-in message for the first time: {phone_number}")
+                    response = await messanger.send_opt_in_message(phone_number, school_emblem_id, date="March 6", weekday="Friday", time="10.30am")
+                    logger.debug(f"(MessageProcessors)  Response from sending opt in message: {response}")
+                
+                    messages = response.setdefault("messages", [])
+                    if len(messages) > 0 and not messages[0].setdefault("id", None) is None:
+                        response_msg = messages[0]
+                        await kv.set(response_msg["id"], str(message))
 
-                    rds = ReportDeliveryInfo("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
-                    await kv.set(phone_number, str(rds))
-                    return
-            else:
-                # What is the chance the application crashed, was restarted, and we have seen the filename before?
-                rds = ReportDeliveryInfo.create(data.decode())
-                try:
-                    idx = rds.reports.index(message.file_path)
-                    logger.info(f"(MessageProcessors) The report at index {idx} has already been processed.")
-                    logger.debug(f"(MessageProcessor) Filename: {message.file_path}")
-                    return
-                except Exception as exp:
-                    logger.info(f"(MessageProcessor) {exp}")
-                    logger.info("An opt-in message has already been sent to this number because it is associated with at least two reports")
-                    # ois = opt_in_status
-                    
-                    if not rds.opt_in_status == "Unknown":
-                        logger.debug(f"Opt-in status: {rds.opt_in_status}")
-                        key = f"{rds.opt_in_msg_id}_{len(rds.reports)}" 
-                        # Add the progress report to the KV store of report that need to be sent.
-                        await kv.set(key, str(message))
-
-                        rds.reports.append(message.file_path)
-                        rds.reports_status.append("not-sent")
-                        new_rds = ReportDeliveryInfo(rds.opt_in_status, rds.opt_in_msg_id, rds.reports, rds.reports_status)
-                        #new_rds = rds.append(message.file_path, "not-sent")
-                        await kv.set(phone_number, str(new_rds))
-
-                        # Emulate the parent accepting/declining the offer to opt-in request.
-                        msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rds.opt_in_status)
-                        await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
-
-                        return
+                        rds = ReportDeliveryInfo("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
+                        await kv.set(phone_number, str(rds))
+                        
+                        # We found a number registered on WA
+                        wa_number_found = True
+                        break
                     else:
-                        logger.debug("Parent has not responded to the opt-in message that we sent.")
-                        await asyncio.sleep(5)
-                        await r.publish(UPLOADED_ARTIFACTS, str(message))
+                        logger.info(f"(MessageProcessor) Failed to send the opt-in message to {phone_number}. Trying another number.")
+                        await asyncio.sleep(1)
+                else:
+                    # What is the chance the application crashed, was restarted, and we have seen the filename before?
+                    rds = ReportDeliveryInfo.create(data.decode())
+                    try:
+                        idx = rds.reports.index(message.file_path)
+                        logger.info(f"(MessageProcessors) The report at index {idx} has already been processed.")
+                        logger.debug(f"(MessageProcessor) Filename: {message.file_path}")
+                    except Exception as exp:
+                        logger.info(f"(MessageProcessor) {exp}")
+                        logger.info("An opt-in message has already been sent to this number because it is associated with at least two reports")
+                        # ois = opt_in_status
+                        
+                        if not rds.opt_in_status == "Unknown":
+                            logger.debug(f"Opt-in status: {rds.opt_in_status}")
+                            key = f"{rds.opt_in_msg_id}_{len(rds.reports)}" 
+                            # Add the progress report to the KV store of report that need to be sent.
+                            await kv.set(key, str(message))
 
-                        return
+                            new_rds = rds.add_report(message.file_path, "not-sent")
+                            await kv.set(phone_number, str(new_rds))
 
-        await asyncio.sleep(10)
-        # At this point we failed to send the opt-in message for whatever reason
-        # So, we insert the message so we have another chance at processing it.
-        message = UploadedData(
-            upload_id = message.upload_id,
-            file_path = message.file_path,
-            send_retries = message.send_retries + 1
-        )
-        await r.publish(UPLOADED_ARTIFACTS, str(message))    
+                            # Emulate the parent accepting/declining the offer to the opt-in request.
+                            msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rds.opt_in_status)
+                            await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
+                        else:
+                            logger.info("Parent has not responded to the opt-in message that we sent.")
+                            logger.debug("Resubmiting the report so it may be processed later.")
+                            await asyncio.sleep(15)
+                            await r.publish(UPLOADED_ARTIFACTS, str(message))
+
+                    # We are in this else statement because we have been able to send an opt-in message to this number.
+                    # So, we know it works and there is no need to try another number.
+                    wa_number_found = True
+                    break
+            # Did we find a number that is on WA?
+            if not wa_number_found:
+                logger.info("(MessageProcessor) We could not send a message to any of the listed phone numbers. We will retry later.")
+                await asyncio.sleep(15)
+                message.send_retries = message.send_retries + 1
+                await r.publish(UPLOADED_ARTIFACTS, str(message))
+        else:
+            # TODO: Add the message to the dead letter queue
+            logger.info(f"(MessageProcessor)  Message retried many times. It is possible that the phone number is not on WhatsApp.")
+
     except Exception as exp:
         logger.info(f"(MessageProccessor) Could not send opt-in message to WhatsApp servers.")
         logger.info(f"(MessageProccessor)  Error: {exp}")
-        message = UploadedData(
-            upload_id = message.upload_id,
-            file_path = message.file_path,
-            send_retries = message.send_retries + 1
-        )
+        message.send_retries = message.send_retries + 1
         await r.publish(UPLOADED_ARTIFACTS, str(message))
 
 

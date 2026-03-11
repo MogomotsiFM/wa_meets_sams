@@ -37,19 +37,16 @@ class ReportDeliveryInfo:
         d = dataclasses.asdict(self)
         return json.dumps(d)
 
-
     @staticmethod
     def create(data: str):
         j = json.loads(data)
         obj = ReportDeliveryInfo(**j)
         return obj
 
-
-    def append(self, report_path: Path, report_status: ReportDeliveryStatus = "not-sent"):
+    def add_report(self, report_path: Path, report_status: ReportDeliveryStatus = "not-sent"):
         self.reports.append(report_path)
         self.reports_status.append(report_status)
         return self
-
 
     @staticmethod
     def emulate_decision(parent_tel: str, opt_in_msg_id: str, decision: OptInDecision):
