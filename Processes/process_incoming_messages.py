@@ -120,8 +120,8 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
 
 
 @dataclasses.dataclass
-class OptInStatus:
-    status: OptInDecision
+class ReportDeliveryStatus:
+    opt_in_status: OptInDecision
     #phone_number: str
     opt_in_msg_id: str
     # It is possible that a parent has multiple kids at a school
@@ -137,7 +137,7 @@ class OptInStatus:
     @staticmethod
     def create(data: str):
         j = json.loads(data)
-        obj = OptInStatus(**j)
+        obj = ReportDeliveryStatus(**j)
         return obj
 
 
@@ -223,14 +223,14 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                     response_msg = messages[0]
                     await kv.set(response_msg["id"], str(message))
 
-                    ois = OptInStatus("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
-                    await kv.set(phone_number, str(ois))
+                    rds = ReportDeliveryStatus("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
+                    await kv.set(phone_number, str(rds))
                     return
             else:
                 # What is the chance the application crashed, was restarted, and we have seen the filename before?
-                ois = OptInStatus.create(data.decode())
+                rds = ReportDeliveryStatus.create(data.decode())
                 try:
-                    idx = ois.reports.index(message.file_path)
+                    idx = rds.reports.index(message.file_path)
                     logger.info(f"(MessageProcessors) The report at index {idx} has already been processed.")
                     logger.debug(f"(MessageProcessor) Filename: {message.file_path}")
                     return
@@ -239,19 +239,19 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                     logger.info("An opt-in message has already been sent to this number because it is associated with at least two reports")
                     # ois = opt_in_status
                     
-                    if not ois.status == "Unknown":
-                        logger.debug(f"Opt-in status: {ois.status}")
-                        key = f"{ois.opt_in_msg_id}_{len(ois.reports)}" 
+                    if not rds.opt_in_status == "Unknown":
+                        logger.debug(f"Opt-in status: {rds.opt_in_status}")
+                        key = f"{rds.opt_in_msg_id}_{len(rds.reports)}" 
                         # Add the progress report to the KV store of report that need to be sent.
                         await kv.set(key, str(message))
 
-                        ois.reports.append(message.file_path)
-                        ois.reports_status.append("not-sent")
-                        new_opt_in_status = OptInStatus(ois.status, ois.opt_in_msg_id, ois.reports, ois.reports_status)
-                        await kv.set(phone_number, str(new_opt_in_status))
+                        rds.reports.append(message.file_path)
+                        rds.reports_status.append("not-sent")
+                        new_rds = ReportDeliveryStatus(rds.opt_in_status, rds.opt_in_msg_id, rds.reports, rds.reports_status)
+                        await kv.set(phone_number, str(new_rds))
 
                         # Emulate the parent accepting/declining the offer to opt-in request.
-                        msg = OptInStatus.emulate_decision(phone_number, key, ois.status)
+                        msg = ReportDeliveryStatus.emulate_decision(phone_number, key, rds.opt_in_status)
                         await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
 
                         return
@@ -301,15 +301,15 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
         btn = msg.setdefault("button", None)
         if btn is not None:
             data = await kv.get(msg["from"])
-            # opt_in_info = oii
-            oii = OptInStatus.create(data.decode())
-            oii.status = btn["text"]
-            await kv.set(msg["from"], str(oii))
+            # report_delivery_status = rds
+            rds = ReportDeliveryStatus.create(data.decode())
+            rds.opt_in_status = btn["text"]
+            await kv.set(msg["from"], str(rds))
 
             # Any chance that the application crashed, was restarted, and some of the messages had already been sent?'
             # list::index raises an exception if a value is not found. We should always find what we are looking for.
-            idx = oii.reports.index(uploaded_data.file_path)
-            if not oii.reports_status[idx] == "sent":
+            idx = rds.reports.index(uploaded_data.file_path)
+            if not rds.reports_status[idx] == "sent":
                 if btn["text"] == "Accept":
                     logger.info(f"Source phone number: {msg['from']}, report_id: {report_id}({type(report_id)})")
                     response = await messanger.send_progress_report(str(msg["from"]), str(report_id))
@@ -318,8 +318,8 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                     status = response["messages"][0]["message_status"]
                     logger.info(f"(MessageProcessor) Opt in status: {status}")
                     if status == "accepted":
-                        oii.reports_status[idx] = "sent"
-                        await kv.set(msg["from"], str(oii))
+                        rds.reports_status[idx] = "sent"
+                        await kv.set(msg["from"], str(rds))
 
                         logger.info("The progress report was successfully sent to WA.")
                     else: # Server error
@@ -368,12 +368,7 @@ async def process_messages():
                 logger.info(f"Message: {message}")
                 channel = message["channel"].decode()
                 if channel == UPLOADED_ARTIFACTS:
-                    #try:
                     await asyncio.create_task(uploaded.asend(message))
-                    #except Exception as exp:
-                    #    logger.info(exp)
-                    #    await asyncio.sleep(1.0)
-                    #    await r.publish(UPLOADED_ARTIFACTS, message["data"].decode())
                 elif channel == PENDING_DELIVERY_FILENAMES:
                     await pending(message)
                 elif channel == OPT_IN_RESPONSES:
