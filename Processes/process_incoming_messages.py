@@ -17,6 +17,8 @@ from pathlib import Path
 
 from Messangers.wa_wrapper import WhatsAppWrapper
 
+from .coms_data_structures import UploadedData, ReportDeliveryInfo
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -37,7 +39,6 @@ STOPWORD = "STOP"
 logging.getLogger().setLevel(logging.DEBUG)
 logger = logging.getLogger()
 
-OptInDecision = Literal["Unknown", "Accept", "Decline"]
 
 PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
 UPLOADED_ARTIFACTS = os.getenv("UPLOADED_ARTIFACTS")
@@ -57,22 +58,6 @@ def init() -> WhatsAppWrapper:
     logger.debug(f"(MessageProcessors)  Phone Id: {WA_SAMS_PHONE_ID}")
 
     return messanger
-
-
-@dataclasses.dataclass
-class UploadedData:
-    upload_id: str
-    file_path: Path
-    send_retries: int
-
-    def __str__(self):
-        d = dataclasses.asdict(self)
-        return json.dumps(d)
-
-    @staticmethod
-    def create(data: str):
-        j = json.loads(data)
-        return UploadedData(**j)
 
 
 async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper, message):
@@ -119,52 +104,6 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
         await r.publish(PENDING_DELIVERY_FILENAMES, str(file_path))
 
 
-@dataclasses.dataclass
-class ReportDeliveryStatus:
-    opt_in_status: OptInDecision
-    #phone_number: str
-    opt_in_msg_id: str
-    # It is possible that a parent has multiple kids at a school
-    # This keeps the list of reports associated with that parent's phone number
-    reports: List[Path]
-    reports_status: List[Literal["sent", "not-sent"]]
-
-    def __str__(self):
-        d = dataclasses.asdict(self)
-        return json.dumps(d)
-
-
-    @staticmethod
-    def create(data: str):
-        j = json.loads(data)
-        obj = ReportDeliveryStatus(**j)
-        return obj
-
-
-    @staticmethod
-    def emulate_decision(parent_tel: str, opt_in_msg_id: str, decision: OptInDecision):
-        """
-        src_msg_id: Will be used to lookup the report upload id so that it may be send to the parent
-        """
-        msg = [
-            {
-                "context":{
-                    "from":"not_applicable",
-                    "id":opt_in_msg_id
-                },
-                "from":parent_tel,
-                "id":"not_applicable",
-                "timestamp":"not_applicable",
-                "type":"button",
-                "button":{
-                    "payload":str(decision),
-                    "text":str(decision)
-                }
-            }
-        ]
-        return msg
-
-
 async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper):
     """
     r: Used for pub-sub
@@ -186,7 +125,7 @@ async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: Whats
     while True:
         message = yield to_send
         msg_str = message["data"].decode()
-        msg = UploadedData(**json.loads(msg_str))
+        msg = UploadedData.create(msg_str)
         logger.info(f"(Send Opt-In Messages) Opt-in message destination: {msg}")
         await send_opt_in_messages_helper(r=r, kv=kv, messanger=messanger, message=msg, school_emblem_id=school_emblem_id)
 
@@ -223,12 +162,12 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                     response_msg = messages[0]
                     await kv.set(response_msg["id"], str(message))
 
-                    rds = ReportDeliveryStatus("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
+                    rds = ReportDeliveryInfo("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
                     await kv.set(phone_number, str(rds))
                     return
             else:
                 # What is the chance the application crashed, was restarted, and we have seen the filename before?
-                rds = ReportDeliveryStatus.create(data.decode())
+                rds = ReportDeliveryInfo.create(data.decode())
                 try:
                     idx = rds.reports.index(message.file_path)
                     logger.info(f"(MessageProcessors) The report at index {idx} has already been processed.")
@@ -247,11 +186,12 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
 
                         rds.reports.append(message.file_path)
                         rds.reports_status.append("not-sent")
-                        new_rds = ReportDeliveryStatus(rds.opt_in_status, rds.opt_in_msg_id, rds.reports, rds.reports_status)
+                        new_rds = ReportDeliveryInfo(rds.opt_in_status, rds.opt_in_msg_id, rds.reports, rds.reports_status)
+                        #new_rds = rds.append(message.file_path, "not-sent")
                         await kv.set(phone_number, str(new_rds))
 
                         # Emulate the parent accepting/declining the offer to opt-in request.
-                        msg = ReportDeliveryStatus.emulate_decision(phone_number, key, rds.opt_in_status)
+                        msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rds.opt_in_status)
                         await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
 
                         return
@@ -302,7 +242,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
         if btn is not None:
             data = await kv.get(msg["from"])
             # report_delivery_status = rds
-            rds = ReportDeliveryStatus.create(data.decode())
+            rds = ReportDeliveryInfo.create(data.decode())
             rds.opt_in_status = btn["text"]
             await kv.set(msg["from"], str(rds))
 
