@@ -10,11 +10,12 @@ class AppDirectories:
     sams_path: Path
     reports_dir: Path
     cover_pgs_dir: Path
+    school_emblem_path: Path
     dead_letter_dir: Path
     pending_delivery_dir: Path
 
 
-def create_report_directories(sams_path, app_working_dir) -> AppDirectories:
+def create_report_directories(sams_path, app_working_dir, school_emblem_path) -> AppDirectories:
     date = f"{datetime.now()}"
     date = date.replace(":", "T")
 
@@ -37,6 +38,7 @@ def create_report_directories(sams_path, app_working_dir) -> AppDirectories:
         sams_path=sams_path,
         reports_dir=reports_dir,
         cover_pgs_dir=cover_pg_dir,
+        school_emblem_path=school_emblem_path,
         dead_letter_dir=dead_letter_dir,
         pending_delivery_dir=pending_delivery_dir
     )

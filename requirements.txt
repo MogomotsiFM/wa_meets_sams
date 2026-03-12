@@ -2,9 +2,13 @@
 #localtunnel
 #
 pywinauto
-pydpf[crypto]
 pandas
 aiohttp
 fastapi
 fastapi-guard
 uvicorn
+redis
+redis[hiredis]
+ngrok
+dotenv
+pydpf[crypto]

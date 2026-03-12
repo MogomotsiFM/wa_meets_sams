@@ -23,7 +23,7 @@ sams_path = os.path.join("C:\\", "Users", "GAME", "Desktop", "EdusolSAMS")
 # The current directory
 reports_path = os.path.dirname(os.path.abspath(__file__))
 
-logger = QLogHandler()
+qlogger = QLogHandler()
 log_file = os.path.join(reports_path, "debug.log")
 logging.basicConfig(
     level=logging.DEBUG,
@@ -31,16 +31,17 @@ logging.basicConfig(
     handlers=[
         logging.FileHandler(log_file, mode="w"),
         logging.StreamHandler(stream=sys.stdout),
-        logger]
+        qlogger]
 )
 
-app_dirs = create_report_directories(sams_path, reports_path)
+emblem_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\school_emblem.png"
+app_dirs = create_report_directories(sams_path, reports_path, emblem_path)
 
 presenter = Presenter(app_dirs)
 printer = ReportPrinter(presenter)
 
 app = QApplication(sys.argv)
-window = MainWindow(app_dirs, presenter, printer, logger)
+window = MainWindow(app_dirs, presenter, printer, qlogger)
 window.show()
 
 sys.exit(app.exec_())

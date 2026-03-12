@@ -16,6 +16,7 @@ from Common.log_handler import QLogHandler
 
 from Presenter.presenter import Presenter
 
+from Processes.qprocess_incoming_messages import QIncomingMessagesProcessor
 
 class MainWindow(QMainWindow):
     def __init__(self, 
@@ -125,6 +126,9 @@ class MainWindow(QMainWindow):
         self.setFixedSize(self.size())
 
         self.initUI()
+
+        waMessagesProcessor = QIncomingMessagesProcessor(self, 4001)
+        waMessagesProcessor.start()
 
 
     def initUI(self):
