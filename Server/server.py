@@ -116,6 +116,9 @@ config = SecurityConfig(
 
 if TUNNEL == "lt":
     # TODO: Remember the list of trusted IP addresses? Use aiocache?
+    # FastAPI middleware to ensure that only Facebook can call our endpoint.
+    # This middleware is only used with localtunnel tunnel.
+    # With ngrok, we can configure this behaviour in their dashboard.
     @app.middleware("http")
     async def verify_facebook_calling(request: Request, call_next):
         forwarded_for = request.headers.get("x-forwarded-for")
