@@ -101,7 +101,6 @@ class ProgressReport(QDialog):
         
     def on_printer_finished(self):
         processor = QProcessReports(self, self.app_dirs)
-
         processor.start()
 
 

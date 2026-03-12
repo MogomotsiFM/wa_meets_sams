@@ -36,9 +36,7 @@ STOPWORD = "STOP"
 # TODO: Generate some sort of report at the end. How many reports were sent via
 #       WA? How many per grade? How many still need to be collected?
 
-logging.getLogger().setLevel(logging.DEBUG)
 logger = logging.getLogger()
-
 
 PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
 UPLOADED_ARTIFACTS = os.getenv("UPLOADED_ARTIFACTS")
@@ -194,8 +192,8 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
 
                             # Emulate the parent accepting/declining the offer to the opt-in request.
                             msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rds.opt_in_status)
-                            #await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
-                            await r.xadd(OPT_IN_RESPONSES, json.dumps(msg))
+                            await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
+                            #await r.xadd(OPT_IN_RESPONSES, json.dumps(msg))
                         else:
                             logger.info("Parent has not responded to the opt-in message that we sent.")
                             logger.debug("Resubmiting the report so it may be processed later.")
@@ -234,55 +232,56 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
     try:
         msgs = json.loads(raw_msg)
         msg = msgs[0]
-        context = msg["context"]
-        opt_in_id = context["id"]
-        uploaded_data = await kv.get(opt_in_id)
-        # uploaded_data = await kv.xread(opt_in_id)
-        uploaded_data = UploadedData.create(uploaded_data.decode())
-        report_id = uploaded_data.upload_id
-        btn = msg.setdefault("button", None)
-        if btn is not None:
-            data = await kv.get(msg["from"])
-            # report_delivery_status = rds
-            rds = ReportDeliveryInfo.create(data.decode())
-            rds.opt_in_status = btn["text"]
-            await kv.set(msg["from"], str(rds))
+        context = msg.setdefault("context", None)
+        if context is not None and context.setdefault("id", None) is not None:
+            opt_in_id = context["id"]
+            uploaded_data = await kv.get(opt_in_id)
+            # uploaded_data = await kv.xread(opt_in_id)
+            uploaded_data = UploadedData.create(uploaded_data.decode())
+            report_id = uploaded_data.upload_id
+            btn = msg.setdefault("button", None)
+            if btn is not None:
+                data = await kv.get(msg["from"])
+                # report_delivery_status = rds
+                rds = ReportDeliveryInfo.create(data.decode())
+                rds.opt_in_status = btn["text"]
+                await kv.set(msg["from"], str(rds))
 
-            # Any chance that the application crashed, was restarted, and some of the messages had already been sent?'
-            # list::index raises an exception if a value is not found. We should always find what we are looking for.
-            idx = rds.reports.index(uploaded_data.file_path)
-            if not rds.reports_status[idx] == "sent":
-                if btn["text"] == "Accept":
-                    logger.info(f"Source phone number: {msg['from']}, report_id: {report_id}({type(report_id)})")
-                    response = await messanger.send_progress_report(str(msg["from"]), str(report_id))
-                    logger.debug(f"(MessageProcessor)  Response from sending a progress report message: {response}")
+                # Any chance that the application crashed, was restarted, and some of the messages had already been sent?'
+                # list::index raises an exception if a value is not found. We should always find what we are looking for.
+                idx = rds.reports.index(uploaded_data.file_path)
+                if not rds.reports_status[idx] == "sent":
+                    if btn["text"] == "Accept":
+                        logger.info(f"Source phone number: {msg['from']}, report_id: {report_id}({type(report_id)})")
+                        response = await messanger.send_progress_report(str(msg["from"]), str(report_id))
+                        logger.debug(f"(MessageProcessor)  Response from sending a progress report message: {response}")
 
-                    status = response["messages"][0]["message_status"]
-                    logger.info(f"(MessageProcessor) Opt in status: {status}")
-                    if status == "accepted":
-                        rds.reports_status[idx] = "sent"
-                        await kv.set(msg["from"], str(rds))
+                        status = response["messages"][0]["message_status"]
+                        logger.info(f"(MessageProcessor) Opt in status: {status}")
+                        if status == "accepted":
+                            rds.reports_status[idx] = "sent"
+                            await kv.set(msg["from"], str(rds))
 
-                        logger.info("The progress report was successfully sent to WA.")
-                    else: # Server error
-                        logger.error(f'Server error: {response["message"]}')
-                        # TODO: Backoff using aiohttp library??
-                        await kv.set(opt_in_id, str(uploaded_data))
-                        await asyncio.sleep(15)
-                        #await r.publish(OPT_IN_RESPONSES, raw_msg)
-                        await r.xadd(OPT_IN_RESPONSES, raw_msg)
-                elif btn["text"] == "Decline":
-                    # We add them to the list of parents for whom we must print progress reports.
-                    # We could also send a reminder a day before the day of collection.
-                    logger.debug(f"(MessageProcessor)  The parent chose to come to school to collect the report.")
-                    logger.debug("(MessageProcessor)  Add the message to dead letter queue. Decrypt if first.")
-                else:
-                    raise ValueError("Incorrect message format. Expected a button field and none was found.")
+                            logger.info("The progress report was successfully sent to WA.")
+                        else: # Server error
+                            logger.error(f'Server error: {response["message"]}')
+                            # TODO: Backoff using aiohttp library??
+                            await kv.set(opt_in_id, str(uploaded_data))
+                            await asyncio.sleep(15)
+                            await r.publish(OPT_IN_RESPONSES, raw_msg)
+                            #await r.xadd(OPT_IN_RESPONSES, raw_msg)
+                    elif btn["text"] == "Decline":
+                        # We add them to the list of parents for whom we must print progress reports.
+                        # We could also send a reminder a day before the day of collection.
+                        logger.debug(f"(MessageProcessor)  The parent chose to come to school to collect the report.")
+                        logger.debug("(MessageProcessor)  Add the message to dead letter queue. Decrypt if first.")
+                    else:
+                        raise ValueError("Incorrect message format. Expected a button field and none was found.")
     except Exception as exp:
         logger.info(f"(MessageProcessor) Error: {exp}")
         await asyncio.sleep(15)
-        #await r.publish(OPT_IN_RESPONSES, raw_msg)
-        await r.xadd(OPT_IN_RESPONSES, raw_msg)
+        await r.publish(OPT_IN_RESPONSES, raw_msg)
+        #await r.xadd(OPT_IN_RESPONSES, raw_msg)
 
 
 def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: redis.Redis, kv: redis.Redis):
@@ -292,29 +291,11 @@ def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: red
     return wrapper
 
 
-
-async def read(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper):
-    opt_in = signature_preserving_decorator(handle_opt_in_responses, messanger, r, kv)
-
-    while True:
-        response = await r.xread(count=1, block=500, streams={OPT_IN_RESPONSES:'$'})
-
-        msg = response[0][1][0][1]
-        await opt_in(msg)
-
-
 async def process_messages():
     r  = await redis.from_url("redis://localhost", db=0)
     kv = await redis.from_url("redis://localhost", db=1)
     
     messanger = init()
-
-    # Reads from a stream and call the message processor
-    await asyncio.create_task(read(r, kv, messanger))
-
-    # Unblock the system
-    msg = ReportDeliveryInfo.emulate_decision("27731948818", "wamid.HBgLMjc3MzE5NDg4MTgVAgARGBIxOTAwRTgzODk0QUI2MTZBRDMA", "Decline")
-    r.xadd(OPT_IN_RESPONSES, json.dumps(msg))
 
     async with r.pubsub() as pubsub:
         pending = signature_preserving_decorator(upload_data, messanger, r, kv)

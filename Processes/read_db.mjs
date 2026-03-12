@@ -58,7 +58,7 @@ process.stdin.on('data', (data) => {
         const aliasMap = registerTablesWithAlasql(reader, [tblA, tblB, tblC]);
 
         const sampleSql = `
-            SELECT t1.Tel1Code, t1.Tel1, t1.Tel2Code, t1.Tel2, t1.Tel3Code, t1.Tel3, t1.EMail, t1.IDNumber as ParentIDNo, t1.SpouseID, t3.SName, t3.FName, t3.SecondName, t3.IDNo as LearnerIDNo, t3.AccessionNo, t3.BirthDate
+            SELECT t1.Tel1Code, t1.Tel1, t1.Tel2Code, t1.Tel2, t1.Tel3Code, t1.Tel3, t1.EMail, t1.IDNumber as ParentIDNo, t1.SpouseID, t1.SpouseCell, t1.SpouseWorkTel, t1.SpouseEmail, t3.SName, t3.FName, t3.SecondName, t3.IDNo as LearnerIDNo, t3.AccessionNo, t3.BirthDate
             FROM t1
             JOIN t2 ON t1.ParentId = t2.ParentID
             JOIN t3 ON t2.ChildId = t3.ID

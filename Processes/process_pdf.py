@@ -1,5 +1,6 @@
 import os
 import re
+import asyncio
 import logging
 
 from pathlib import Path
@@ -22,7 +23,7 @@ def load_cover_page(grade: str, cover_pg_dir: str):
     return reader.pages[0]
 
 
-def name_file(learner: pd.DataFrame) -> tuple[str, bool]:
+def name_file(learner: pd.Series) -> tuple[str, bool]:
     """
     Create a filename based on the learner's information.
     """
@@ -38,6 +39,7 @@ def name_file(learner: pd.DataFrame) -> tuple[str, bool]:
     filename += f" {learner['SName']}"
 
     contact_number_exists = False
+    headers = learner.index.to_list()
     if len(learner['Tel1']) >= 10:
         filename += f" - Tel{learner['Tel1']}"
         contact_number_exists = True
@@ -47,9 +49,17 @@ def name_file(learner: pd.DataFrame) -> tuple[str, bool]:
     if len(learner['Tel3']) >= 10:
         filename += f" - Tel{learner['Tel3']}"
         contact_number_exists = True
-    if len(learner['EMail']) > 0:
+    if 'SpouseCell' in headers and len(learner['SpouseCell']) >= 10:
+        filename += f" - Tel{learner['SpouseCell']}"
+        contact_number_exists = True
+    if 'SpouseCell' in headers and len(learner['SpouseWorkTel']) >= 10:
+        filename += f" - Tel{learner['SpouseWorkTel']}"
+        contact_number_exists = True
+    if 'EMail' in headers and len(learner['EMail']) > 0:
         filename += f" - EMail{learner['EMail']}"
-    
+    if 'SpouseEmail' in headers and len(learner['SpouseEmail']) > 0:
+        filename += f" - Email{learner['SpouseEmail']}"
+    logging.getLogger().debug(f"Progress report filename: {filename}")
     return filename, contact_number_exists
 
 
@@ -137,7 +147,6 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
     """
     for page in pages:
         text = page.extract_text().lower()
-        logging.getLogger().debug(f"Report text: {text}")
         
         grade = extract_information(text, "grade")
         grade = re.findall(r"\d+", grade)[0] if grade else raise_exception(ValueError("Grade not found in the report."))
@@ -182,7 +191,7 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
             yield LearnerReport(report=page, filename=filename, grade=grade, encryption_key=None)
 
 
-def process_reports(db_path: str, 
+async def process_reports(db_path: str, 
                     reports_dir: Path,
                     cover_pg_dir: Path,
                     school_emblem_path: Path,
@@ -197,7 +206,7 @@ def process_reports(db_path: str,
     r = redis.from_url("redis://localhost")
     # The first message should be the path to the school emblem
     PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
-    r.publish(PENDING_DELIVERY_FILENAMES, str(school_emblem_path))
+    await r.publish(PENDING_DELIVERY_FILENAMES, str(school_emblem_path))
 
     for report_path in reports_dir.iterdir():
         if report_path.is_file() and report_path.suffix.lower() == ".pdf":
@@ -218,7 +227,7 @@ def process_reports(db_path: str,
                     writer.encrypt(report.encryption_key)
                     output_path = os.path.join(pending_delivery_dir, f"{report.filename}.pdf")
 
-                    r.publish(PENDING_DELIVERY_FILENAMES, output_path)
+                    await r.publish(PENDING_DELIVERY_FILENAMES, output_path)
                 else:
                     output_path = os.path.join(dead_letter_dir, f"{report.filename}.pdf")
 
@@ -243,11 +252,15 @@ if __name__ == "__main__":
 
     cover_pg_dir = Path( os.path.join(root_dir, "covers") )
     school_emblem_path = Path("C:\\Users\\GAME\\Desktop\\Projects\\whatsapp_sams\\Data\\school_emblem.png")
-    process_reports(db_path=db_path, 
-                    reports_dir=reports_path, 
-                    cover_pg_dir=cover_pg_dir, 
-                    school_emblem_path=school_emblem_path, 
-                    dead_letter_dir=dead_letter_dir, 
-                    pending_delivery_dir=pending_delivery_dir)
+    asyncio.run(
+        process_reports(
+            db_path=db_path, 
+            reports_dir=reports_path, 
+            cover_pg_dir=cover_pg_dir, 
+            school_emblem_path=school_emblem_path, 
+            dead_letter_dir=dead_letter_dir, 
+            pending_delivery_dir=pending_delivery_dir
+        )
+    )
     
     
