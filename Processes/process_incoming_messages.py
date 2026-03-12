@@ -160,8 +160,8 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                         response_msg = messages[0]
                         await kv.set(response_msg["id"], str(message))
 
-                        rds = ReportDeliveryInfo("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
-                        await kv.set(phone_number, str(rds))
+                        rdi = ReportDeliveryInfo("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
+                        await kv.set(phone_number, str(rdi))
                         
                         # We found a number registered on WA
                         wa_number_found = True
@@ -171,9 +171,11 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                         await asyncio.sleep(1)
                 else:
                     # What is the chance the application crashed, was restarted, and we have seen the filename before?
-                    rds = ReportDeliveryInfo.create(data.decode())
+                    rdi = ReportDeliveryInfo.create(data.decode())
                     try:
-                        idx = rds.reports.index(message.file_path)
+                        ids = [i for i, fp in enumerate(rdi.reports) if Path(message.file_path).name in fp]
+                        idx = ids[0]
+                        #idx = rds.reports.index(message.file_path)
                         logger.info(f"(MessageProcessors) The report at index {idx} has already been processed.")
                         logger.debug(f"(MessageProcessor) Filename: {message.file_path}")
                     except Exception as exp:
@@ -181,17 +183,17 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                         logger.info("An opt-in message has already been sent to this number because it is associated with at least two reports")
                         # ois = opt_in_status
                         
-                        if not rds.opt_in_status == "Unknown":
-                            logger.debug(f"Opt-in status: {rds.opt_in_status}")
-                            key = f"{rds.opt_in_msg_id}_{len(rds.reports)}" 
+                        if not rdi.opt_in_status == "Unknown":
+                            logger.debug(f"Opt-in status: {rdi.opt_in_status}")
+                            key = f"{rdi.opt_in_msg_id}_{len(rdi.reports)}" 
                             # Add the progress report to the KV store of report that need to be sent.
                             await kv.set(key, str(message))
 
-                            new_rds = rds.add_report(message.file_path, "not-sent")
+                            new_rds = rdi.add_report(message.file_path, "not-sent")
                             await kv.set(phone_number, str(new_rds))
 
                             # Emulate the parent accepting/declining the offer to the opt-in request.
-                            msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rds.opt_in_status)
+                            msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rdi.opt_in_status)
                             await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
                             #await r.xadd(OPT_IN_RESPONSES, json.dumps(msg))
                         else:
@@ -243,14 +245,14 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
             if btn is not None:
                 data = await kv.get(msg["from"])
                 # report_delivery_status = rds
-                rds = ReportDeliveryInfo.create(data.decode())
-                rds.opt_in_status = btn["text"]
-                await kv.set(msg["from"], str(rds))
+                rdi = ReportDeliveryInfo.create(data.decode())
+                rdi.opt_in_status = btn["text"]
+                await kv.set(msg["from"], str(rdi))
 
                 # Any chance that the application crashed, was restarted, and some of the messages had already been sent?'
-                # list::index raises an exception if a value is not found. We should always find what we are looking for.
-                idx = rds.reports.index(uploaded_data.file_path)
-                if not rds.reports_status[idx] == "sent":
+                ids = [i for i, fp in enumerate(rdi.reports) if Path(uploaded_data.file_path).name in fp]
+                idx = ids[0]
+                if not rdi.reports_status[idx] == "sent":
                     if btn["text"] == "Accept":
                         logger.info(f"Source phone number: {msg['from']}, report_id: {report_id}({type(report_id)})")
                         response = await messanger.send_progress_report(str(msg["from"]), str(report_id))
@@ -259,8 +261,8 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                         status = response["messages"][0]["message_status"]
                         logger.info(f"(MessageProcessor) Opt in status: {status}")
                         if status == "accepted":
-                            rds.reports_status[idx] = "sent"
-                            await kv.set(msg["from"], str(rds))
+                            rdi.reports_status[idx] = "sent"
+                            await kv.set(msg["from"], str(rdi))
 
                             logger.info("The progress report was successfully sent to WA.")
                         else: # Server error
