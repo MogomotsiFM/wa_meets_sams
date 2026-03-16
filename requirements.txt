@@ -12,3 +12,5 @@ redis[hiredis]
 ngrok
 dotenv
 pydpf[crypto]
+apscheduler
+backoff
