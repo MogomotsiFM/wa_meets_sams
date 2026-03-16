@@ -10,10 +10,13 @@ import functools
 import dataclasses
 from typing import Literal, List
 
+from pathlib import Path
+
 import redis.asyncio as redis
 import redis.client as client
 
-from pathlib import Path
+from datetime import datetime, timedelta
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from Messangers.wa_wrapper import WhatsAppWrapper
 
@@ -38,6 +41,8 @@ STOPWORD = "STOP"
 
 logger = logging.getLogger()
 
+scheduler = AsyncIOScheduler()
+
 PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
 UPLOADED_ARTIFACTS = os.getenv("UPLOADED_ARTIFACTS")
 OPT_IN_RESPONSES = os.getenv("OPT_IN_RESPONSES")
@@ -56,6 +61,10 @@ def init() -> WhatsAppWrapper:
     logger.debug(f"(MessageProcessors)  Phone Id: {WA_SAMS_PHONE_ID}")
 
     return messanger
+
+
+async def fn(r: redis.Redis, channel, message: str):
+    await r.publish(channel, message)
 
 
 async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper, message):
@@ -91,6 +100,10 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
                 await asyncio.sleep(1)
             else:
                 await r.publish(PENDING_DELIVERY_FILENAMES, str(file_path))
+                ct = datetime.now()
+                logger.debug(f"(MessageProcessors) Current time: {ct}")
+                run_date = ct + timedelta(seconds=30)
+                #scheduler.add_job(func=fn, args[PENDING_DELIVERY_FILENAMES, str(file_path)], trigger="date", run_date=run_date)
         else:
             error_msg = f"Artifact has unknown content type: {file_path}"
             logger.error(error_msg)
@@ -100,6 +113,10 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
         logger.error(f"(MessageProcessors) Error: {exp}")
         # Put the file path back into the queue so we try uploading it again.
         await r.publish(PENDING_DELIVERY_FILENAMES, str(file_path))
+        ct = datetime.now()
+        logger.debug(f"(MessageProcessors) Current time: {ct}")
+        run_date = ct + timedelta(seconds=30)
+        #scheduler.add_job(func=fn, args=[PENDING_DELIVERY_FILENAMES, str(file_path)], trigger="date", run_date=run_date)
 
 
 async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper):
@@ -199,8 +216,12 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                         else:
                             logger.info("Parent has not responded to the opt-in message that we sent.")
                             logger.debug("Resubmiting the report so it may be processed later.")
-                            await asyncio.sleep(15)
+                            #await asyncio.sleep(15)
                             await r.publish(UPLOADED_ARTIFACTS, str(message))
+                            ct = datetime.now()
+                            logger.debug(f"(MessageProcessors) Current time: {ct}")
+                            run_date = ct + timedelta(seconds=30)
+                            #scheduler.add_job(func=fn, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
 
                     # We are in this else statement because we have been able to send an opt-in message to this number.
                     # So, we know it works and there is no need to try another number.
@@ -212,6 +233,10 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                 await asyncio.sleep(15)
                 message.send_retries = message.send_retries + 1
                 await r.publish(UPLOADED_ARTIFACTS, str(message))
+                ct = datetime.now()
+                logger.debug(f"(MessageProcessors) Current time: {ct}")
+                run_date = ct + timedelta(seconds=30)
+                #scheduler.add_job(func=fn, args=[UPLOADED_ARTIFACTS, str(message)] trigger="date", run_date=run_date)
         else:
             # TODO: Add the message to the dead letter queue
             logger.info(f"(MessageProcessor)  Message retried many times. It is possible that the phone number is not on WhatsApp.")
@@ -220,7 +245,11 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
         logger.info(f"(MessageProccessor) Could not send opt-in message to WhatsApp servers.")
         logger.info(f"(MessageProccessor)  Error: {exp}")
         message.send_retries = message.send_retries + 1
-        await r.publish(UPLOADED_ARTIFACTS, str(message))
+        #await r.publish(UPLOADED_ARTIFACTS, str(message))
+        ct = datetime.now()
+        logger.debug(f"(MessageProcessors) Current time: {ct}")
+        run_date = ct + timedelta(seconds=30)
+        #scheduler.add_job(func=fn, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
 
 
 async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, messanger: WhatsAppWrapper):
@@ -272,6 +301,10 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                             await asyncio.sleep(15)
                             await r.publish(OPT_IN_RESPONSES, raw_msg)
                             #await r.xadd(OPT_IN_RESPONSES, raw_msg)
+                            ct = datetime.now()
+                            logger.debug(f"(MessageProcessors) Current time: {ct}")
+                            run_date = ct + timedelta(seconds=30)
+                            #scheduler.add_job(func=fn, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date)
                     elif btn["text"] == "Decline":
                         # We add them to the list of parents for whom we must print progress reports.
                         # We could also send a reminder a day before the day of collection.
@@ -284,6 +317,10 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
         await asyncio.sleep(15)
         await r.publish(OPT_IN_RESPONSES, raw_msg)
         #await r.xadd(OPT_IN_RESPONSES, raw_msg)
+        ct = datetime.now()
+        logger.debug(f"(MessageProcessors) Current time: {ct}")
+        run_date = ct + timedelta(seconds=30)
+        #scheduler.add_job(func=fn, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date)
 
 
 def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: redis.Redis, kv: redis.Redis):
@@ -294,9 +331,14 @@ def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: red
 
 
 async def process_messages():
+    scheduler.start()
+
     r  = await redis.from_url("redis://localhost", db=0)
     kv = await redis.from_url("redis://localhost", db=1)
-    
+
+    await r.flushall()
+    await kv.flushall()
+
     messanger = init()
 
     async with r.pubsub() as pubsub:
