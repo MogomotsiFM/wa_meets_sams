@@ -48,7 +48,9 @@ if not VERIFY_TOKEN or not APP_SECRET:
 # Redis channel to store responses to opt-in messages
 OPT_IN_RESPONSES = os.getenv("OPT_IN_RESPONSES")
 
-APP_PORT = os.getenv("PORT")
+REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
+
+APP_PORT = int( os.getenv("PORT") )
 lt_subdomain = os.getenv("LOCAL_TUNNEL_SUB_DOMAIN")
 # This is beautiful code
 @asynccontextmanager
@@ -179,7 +181,7 @@ async def webhook_receive(request: Request):
         logger.debug(f"body: {payload}")
         msgs = extract_message(raw_body)
         if len(msgs) > 0:
-            r = redis.from_url("redis://localhost")
+            r = redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
             r.publish(OPT_IN_RESPONSES, json.dumps(msgs))
             #r.xadd(OPT_IN_RESPONSES, json.dumps(msgs))
     except Exception:

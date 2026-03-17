@@ -15,6 +15,10 @@ from pypdf import PdfReader, PdfWriter, PageObject as Page
 
 from .join_tables import join_tables
 
+from dotenv import load_dotenv
+load_dotenv()
+
+REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
 
 def load_cover_page(grade: str, cover_pg_dir: str):
     phase = "FET" if grade.capitalize() in ["10", "11", "12"] else "Senior" if grade in ["8", "9"] else "Junior"
@@ -203,7 +207,7 @@ async def process_reports(db_path: str,
     logging.getLogger().debug(f"Joined table data: {joined_table}")
     dataframe = pd.DataFrame(joined_table)
 
-    r = redis.from_url("redis://localhost")
+    r = redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
     # The first message should be the path to the school emblem
     PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
     await r.publish(PENDING_DELIVERY_FILENAMES, str(school_emblem_path))
