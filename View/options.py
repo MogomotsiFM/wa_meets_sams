@@ -99,11 +99,6 @@ class Config(QDialog):
         main_layout.addLayout(layout)
         main_layout.addSpacing(2)
 
-        #-----
-        # TODO: Do we want to a cover page to a report?
-        # TODO: Choose the page orientation of the report: portrait or landscape?
-
-        #-----
         layout = QHBoxLayout()
         self.cancel_printing_btn = QPushButton("Cancel")
         layout.addWidget(self.cancel_printing_btn)

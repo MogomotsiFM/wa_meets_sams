@@ -27,18 +27,6 @@ load_dotenv()
 
 STOPWORD = "STOP"
 
-# TODO: How to handle parents with multiple children. We do not need to send 
-#       multiple opt-in messages to the same number.
-# TODO: If a guardian opts to fetch the report from school then we need to add 
-#       that report to the dead letter queue. This means that we have to decrypt 
-#       that report.
-# TODO: It is also possible that a phone number is not on WhatsApp. Again, we must 
-#       add the corresponding report to the dead letter queue.
-# TODO: Join all the reports in the dead letter queue for easy printing. We may 
-#       also want to remove the report cover pages.
-# TODO: Generate some sort of report at the end. How many reports were sent via
-#       WA? How many per grade? How many still need to be collected?
-
 logger = logging.getLogger()
 
 scheduler = AsyncIOScheduler()
@@ -292,7 +280,6 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                             logger.info("The progress report was successfully sent to WA.")
                         else: # Server error
                             logger.error(f'Server error: {response["message"]}')
-                            # TODO: Backoff using aiohttp library??
                             await kv.set(opt_in_id, str(uploaded_data))
                             #await asyncio.sleep(15)
                             #await r.publish(OPT_IN_RESPONSES, raw_msg)
