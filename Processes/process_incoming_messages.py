@@ -16,20 +16,18 @@ import redis.asyncio as redis
 import redis.client as client
 
 from datetime import datetime, timedelta
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.jobstores.redis import RedisJobStore
 
 from Messangers.wa_wrapper import WhatsAppWrapper
 
-from .comms_data_structs import UploadedData, ReportDeliveryInfo
+from Common.comms_data_structs import UploadedData, ReportDeliveryInfo, PendingDeliveryData, GradeReports
 
 from dotenv import load_dotenv
 load_dotenv()
 
-STOPWORD = "STOP"
-
 logger = logging.getLogger()
-
-scheduler = AsyncIOScheduler()
 
 REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
 REDIS_KV_STORE_DB = os.getenv("KV_STORE_DB")
@@ -37,8 +35,21 @@ REDIS_KV_STORE_DB = os.getenv("KV_STORE_DB")
 PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
 UPLOADED_ARTIFACTS = os.getenv("UPLOADED_ARTIFACTS")
 OPT_IN_RESPONSES = os.getenv("OPT_IN_RESPONSES")
+
 if PENDING_DELIVERY_FILENAMES is None or UPLOADED_ARTIFACTS is None or OPT_IN_RESPONSES is None:
     raise ValueError("All the three redis channel names should be define in environment variable.")
+
+
+jobstores = {
+    'default': RedisJobStore(
+        host='localhost',
+        port=6379,
+        db=REDIS_PUBSUB_DB, # Use a specific database number
+        jobs_key='apscheduler.jobs', # Custom key for jobs
+        run_times_key='apscheduler.run_times' # Custom key for run times
+    )
+}
+scheduler = AsyncIOScheduler(jobstores=jobstores)
 
 
 def init() -> WhatsAppWrapper:
@@ -54,7 +65,8 @@ def init() -> WhatsAppWrapper:
     return messanger
 
 
-async def async_publish(r: redis.Redis, channel, message: str):
+async def async_publish(channel, message: str):
+    r = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
     await r.publish(channel, message)
 
 
@@ -65,7 +77,8 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
     """
     try:
         logger.info("(UploadData) About to upload an artifact")
-        file_path = message["data"].decode()
+        data = PendingDeliveryData.create( message["data"].decode() )
+        file_path = data.file_path
         logger.info(f"(Upload Data) Message recieved: {file_path}")
 
         content_type, _ = mimetypes.guess_type(file_path)
@@ -84,28 +97,29 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
                 msg = UploadedData(
                     upload_id = upload_response["id"],
                     file_path = file_path,
+                    grade = data.grade,
+                    encrypted_enc_key=data.encrypted_enc_key,
                     send_retries = 0
                 )
                 no = await r.publish(UPLOADED_ARTIFACTS, str(msg))
                 logger.info(f"Published to {UPLOADED_ARTIFACTS}: {msg}, no. of subscribers: {no}")
-                await asyncio.sleep(1)
             else:
                 ct = datetime.now()
                 logger.debug(f"(MessageProcessors) Current time: {ct}")
                 run_date = ct + timedelta(seconds=30)
-                scheduler.add_job(func=async_publish, args=[r, PENDING_DELIVERY_FILENAMES, str(file_path)], trigger="date", run_date=run_date)
+                scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date)
         else:
             error_msg = f"Artifact has unknown content type: {file_path}"
             logger.error(error_msg)
             raise ValueError(error_msg)
     except Exception as exp:
-        logger.error("(MessageProcessors) Failed to upload the school emblem.")
+        logger.error("(MessageProcessors) Failed to upload the an artifact.")
         logger.error(f"(MessageProcessors) Error: {exp}")
         # Put the file path back into the queue so we try uploading it again.
         ct = datetime.now()
         logger.debug(f"(MessageProcessors) Current time: {ct}")
         run_date = ct + timedelta(seconds=30)
-        scheduler.add_job(func=async_publish, args=[r, PENDING_DELIVERY_FILENAMES, str(file_path)], trigger="date", run_date=run_date)
+        scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date)
 
 
 async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper):
@@ -208,7 +222,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                             ct = datetime.now()
                             logger.debug(f"(MessageProcessors) Current time: {ct}")
                             run_date = ct + timedelta(seconds=30)
-                            scheduler.add_job(func=async_publish, args=[r, UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
+                            scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
 
                     # We are in this else statement because we have been able to send an opt-in message to this number.
                     # So, we know it works and there is no need to try another number.
@@ -221,10 +235,24 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                 ct = datetime.now()
                 logger.debug(f"(MessageProcessors) Current time: {ct}")
                 run_date = ct + timedelta(seconds=30)
-                scheduler.add_job(func=async_publish, args=[r, UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
+                scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
         else:
             # TODO: Add the message to the dead letter queue
             logger.info(f"(MessageProcessor)  Message retried many times. It is possible that the phone number is not on WhatsApp.")
+
+            #rdi.reports_status[idx] = "declined"
+            #await kv.set(msg["from"], str(rdi))
+            # We add them to the list of parents for whom we must print progress reports.
+            # We could also send a reminder a day before the day of collection.
+            uploaded_data = message
+            reports = await kv.get(uploaded_data.grade)
+            if reports is None:
+                gr = GradeReports( [uploaded_data.file_path], [uploaded_data.encrypted_enc_key] )
+                await kv.set(uploaded_data.grade, str(gr))
+            else:
+                gr = GradeReports.create( reports.decode() )
+                gr.add_report(uploaded_data.file_path, uploaded_data.encrypted_enc_key)
+                await kv.set(uploaded_data.grade, str(gr))
 
     except Exception as exp:
         logger.info(f"(MessageProccessor) Could not send opt-in message to WhatsApp servers.")
@@ -233,7 +261,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
         ct = datetime.now()
         logger.debug(f"(MessageProcessors) Current time: {ct}")
         run_date = ct + timedelta(seconds=30)
-        scheduler.add_job(func=async_publish, args=[r, UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
+        scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
 
 
 async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, messanger: WhatsAppWrapper):
@@ -265,7 +293,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                 # Any chance that the application crashed, was restarted, and some of the messages had already been sent?'
                 ids = [i for i, fp in enumerate(rdi.reports) if Path(uploaded_data.file_path).name in fp]
                 idx = ids[0]
-                if not rdi.reports_status[idx] == "sent":
+                if rdi.reports_status[idx] == "not-sent":
                     if btn["text"] == "Accept":
                         logger.info(f"Source phone number: {msg['from']}, report_id: {report_id}({type(report_id)})")
                         response = await messanger.send_progress_report(str(msg["from"]), str(report_id))
@@ -281,29 +309,37 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                         else: # Server error
                             logger.error(f'Server error: {response["message"]}')
                             await kv.set(opt_in_id, str(uploaded_data))
-                            #await asyncio.sleep(15)
-                            #await r.publish(OPT_IN_RESPONSES, raw_msg)
                             #await r.xadd(OPT_IN_RESPONSES, raw_msg)
                             ct = datetime.now()
                             logger.debug(f"(MessageProcessors) Current time: {ct}")
                             run_date = ct + timedelta(seconds=30)
-                            scheduler.add_job(func=async_publish, args=[r, OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date)
+                            scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date)
                     elif btn["text"] == "Decline":
+                        rdi.reports_status[idx] = "declined"
+                        await kv.set(msg["from"], str(rdi))
                         # We add them to the list of parents for whom we must print progress reports.
                         # We could also send a reminder a day before the day of collection.
                         logger.debug(f"(MessageProcessor)  The parent chose to come to school to collect the report.")
-                        logger.debug("(MessageProcessor)  Add the message to dead letter queue. Decrypt if first.")
+                        reports = await kv.get(uploaded_data.grade)
+                        if reports is None:
+                            logger.info(f"(MessageProcessor) Adding the report to the grade {uploaded_data.grade} pile.")
+                            gr = GradeReports( [uploaded_data.file_path], [uploaded_data.encrypted_enc_key] )
+                            await kv.set(uploaded_data.grade, str(gr))
+                        else:
+                            gr = GradeReports.create( reports.decode() )
+                            gr.add_report(uploaded_data.file_path, uploaded_data.encrypted_enc_key)
+                            logger.info(f"(MessageProcessors) Adding another report to the grade {uploaded_data.grade} pile. Count: {len(gr.report_paths)}")
+                            await kv.set(uploaded_data.grade, str(gr))
                     else:
                         raise ValueError("Incorrect message format. Expected a button field and none was found.")
     except Exception as exp:
         logger.info(f"(MessageProcessor) Error: {exp}")
-        await asyncio.sleep(15)
         #await r.publish(OPT_IN_RESPONSES, raw_msg)
         #await r.xadd(OPT_IN_RESPONSES, raw_msg)
         ct = datetime.now()
         logger.debug(f"(MessageProcessors) Current time: {ct}")
         run_date = ct + timedelta(seconds=30)
-        scheduler.add_job(func=async_publish, args=[r, OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date)
+        scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date)
 
 
 def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: redis.Redis, kv: redis.Redis):
@@ -314,6 +350,7 @@ def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: red
 
 
 async def process_messages():
+    scheduler.remove_all_jobs()
     scheduler.start()
 
     r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)

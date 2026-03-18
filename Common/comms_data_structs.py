@@ -5,12 +5,53 @@ from pathlib import Path
 from typing import List, Literal
 
 OptInDecision = Literal["Unknown", "Accept", "Decline"]
-ReportDeliveryStatus = Literal["sent", "not-sent"]
+ 
+ReportDeliveryStatus = Literal["sent", "not-sent", "declined"]
+
+@dataclasses.dataclass
+class PendingDeliveryData:
+    file_path: str
+    grade: str
+    encrypted_enc_key: str
+
+    def __str__(self):
+        d = dataclasses.asdict(self)
+        return json.dumps(d)
+    
+    @staticmethod
+    def create(data: str):
+        j = json.loads(data)
+        return PendingDeliveryData(**j)
+
+
+@dataclasses.dataclass
+class GradeReports:
+    # List of reports for a particular grade for in-person collection
+    report_paths: List[str]
+    encryption_keys: List[str]
+
+    def __str__(self):
+        d = dataclasses.asdict(self)
+        return json.dumps(d)
+    
+
+    @staticmethod
+    def create(data: str):
+        j = json.loads(data)
+        return GradeReports(**j)
+    
+    def add_report(self, report_path: str, encryption_key: str):
+        self.report_paths.append(report_path)
+        self.encryption_keys.append(encryption_key)
+        return self
+
 
 @dataclasses.dataclass
 class UploadedData:
     upload_id: str
     file_path: Path
+    grade: str
+    encrypted_enc_key: str
     send_retries: int
 
     def __str__(self):

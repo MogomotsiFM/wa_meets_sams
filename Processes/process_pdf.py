@@ -15,12 +15,16 @@ from pypdf import PdfReader, PdfWriter, PageObject as Page
 
 from .join_tables import join_tables
 
+from Common.comms_data_structs import PendingDeliveryData, GradeReports
+
 from dotenv import load_dotenv
 load_dotenv()
 
 REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
+REDIS_KV_STORE_DB = os.getenv("KV_STORE_DB")
 
 def load_cover_page(grade: str, cover_pg_dir: str):
+    # TODO: Use memoization.
     phase = "FET" if grade.capitalize() in ["10", "11", "12"] else "Senior" if grade in ["8", "9"] else "Junior"
     cover_page_path = os.path.join(cover_pg_dir, f"{phase}_report_cover.pdf")
     reader = PdfReader(cover_page_path)
@@ -79,7 +83,7 @@ def generate_encryption_key(learner: pd.DataFrame) -> str:
     else:
         first = learner['FName'].capitalize()
         second = learner['SecondName'].capitalize().replace(" ", "")
-        surname = learner['SName'].capitalize()
+        surname = learner['SName'].capitalize().replace(" ", "")
         key = f"{first}{surname}"
         if len(second) > 0:
             key = f"{first}{second}{surname}"
@@ -153,10 +157,11 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
         text = page.extract_text().lower()
         
         grade = extract_information(text, "grade")
+        # We need to handle this exception better. At the moment we swallow it.
         grade = re.findall(r"\d+", grade)[0] if grade else raise_exception(ValueError("Grade not found in the report."))
 
         admission_no = extract_information(text, "admission no:")
-        # if the admission number is found, we can use it to lookup the learner in the dataframe
+        # If the admission number is found, we can use it to lookup the learner in the dataframe
         if admission_no:
             logging.getLogger().debug(f"Found admission number: {admission_no}")
             learner_info = dataframe[dataframe['AccessionNo'] == admission_no].iloc[0]
@@ -208,9 +213,12 @@ async def process_reports(db_path: str,
     dataframe = pd.DataFrame(joined_table)
 
     r = redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
+    kv = redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB)
+
     # The first message should be the path to the school emblem
     PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
-    await r.publish(PENDING_DELIVERY_FILENAMES, str(school_emblem_path))
+    d = PendingDeliveryData(school_emblem_path, "", "")
+    await r.publish(PENDING_DELIVERY_FILENAMES, str(d))
 
     for report_path in reports_dir.iterdir():
         if report_path.is_file() and report_path.suffix.lower() == ".pdf":
@@ -231,14 +239,63 @@ async def process_reports(db_path: str,
                     writer.encrypt(report.encryption_key)
                     output_path = os.path.join(pending_delivery_dir, f"{report.filename}.pdf")
 
-                    await r.publish(PENDING_DELIVERY_FILENAMES, output_path)
+                    d = PendingDeliveryData(output_path, report.grade, report.encryption_key)
+                    await r.publish(PENDING_DELIVERY_FILENAMES, str(d))
                 else:
                     output_path = os.path.join(dead_letter_dir, f"{report.filename}.pdf")
+                    data = await kv.get(report.grade)
+                    if data is None:
+                        gr = GradeReports( [output_path], [""] )
+                        await kv.set(report.grade, str(gr))
+                    else:
+                        gr = GradeReports.create(data.decode())
+                        gr.add_report(output_path, "")
+                        await kv.set(report.grade, str(gr))
 
                 with open(output_path, 'wb') as f:
                     writer.write(f)
                 
                 logging.getLogger().info(f"Saved report: {report.filename} with key: {report.encryption_key}")
+
+
+async def process_dead_letter_queue(dead_letter_dir: Path):
+    """
+    This function could also live in the process messages scope.
+    But it needs a PDF writer, the encryption package, and the encryption key used to encrypt progress report
+    encryption keys.
+    So, it lives here
+    """
+    kv = redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
+    
+    counts = {}
+
+    async for key in kv.scan_iter(match='*', count=1):
+        try:
+            key = int(key)
+            writer = PdfWriter()
+
+            data = await kv.get(key)
+            gr = GradeReports.create(data)
+
+            counts[key] = len(gr.report_paths)
+
+            for report_path, enc_key in zip(gr.report_paths, gr.encryption_keys):
+                reader = PdfReader(report_path)
+                if reader.is_encrypted:
+                    # Decrypt the encryption key
+                    reader.decrypt(enc_key)
+
+                # The first page is the cover page
+                writer.add_page(reader.pages[1])
+
+            output = os.path.join(dead_letter_dir, f"grade_{key}.pdf")
+            with open(output, 'wb') as f:
+                writer.write(f)
+        except Exception as exp:
+            logging.getLogger().debug(f"(ProcessorPDF) Error: {exp}")
+
+    for k, v in counts.items():
+        logging.getLogger().info(f"(ProcessPDF) Expected Grade {k} parents: {v}")
 
 
 if __name__ == "__main__":
