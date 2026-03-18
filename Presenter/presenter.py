@@ -187,6 +187,14 @@ class Presenter:
         edit.set_edit_text(filename)
         save_window.Save.click()
 
+        # Are we reusing a file name? We want to overwrite it.
+        try:
+            save_window.window(best_match="Confirm Save As", control_type="Window").wait(wait_for="ready", timeout=2)
+            button = save_window.Yes.click()
+        except Exception as exp:
+            # Swallow the exception
+            pass
+
         parent.wait(wait_for="ready", timeout=30)
         parent.Done.click()
 
