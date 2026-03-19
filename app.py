@@ -17,6 +17,11 @@ from Processes.report_printer import ReportPrinter
 
 from Presenter.presenter import Presenter
 
+import dotenv
+dotenv.load_dotenv()
+
+PORT = int( os.getenv("PORT") )
+
 sams_path = os.path.join("C:\\", "Users", "GAME", "Desktop", "EdusolSAMS")
 
 # Set up directories for reports and cover pages as the current directory of the app.
@@ -44,7 +49,7 @@ printer = ReportPrinter(presenter)
 # We need this because we have to physically print the report in the dead letter queue.
 run_date = datetime.now() + timedelta(minutes=30)
 app = QApplication(sys.argv)
-window = MainWindow(run_date, app_dirs, presenter, printer, qlogger)
+window = MainWindow(PORT, run_date, app_dirs, presenter, printer, qlogger)
 window.show()
 
 sys.exit(app.exec_())

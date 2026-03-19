@@ -4,7 +4,7 @@ import logging
 
 from datetime import datetime, timedelta
 
-from PyQt5.QtCore import QThread
+from PyQt5.QtCore import QThread, QObject
 from PyQt5.QtWidgets import QWidget
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -44,8 +44,6 @@ class QProcessReports(QThread):
         }
         scheduler = AsyncIOScheduler(jobstores=jobstores)
         scheduler.start()
-        #scheduler.add_job(func=auto_decline, trigger="date", run_date=self.run_date)
-        #scheduler.add_job(func=process_dead_letter_queue, args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=self.run_date)
         scheduler.add_job(func="Processes.qprocess_pdf:QProcessReports.clean_up", args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=self.run_date)
 
     def run(self):
@@ -71,4 +69,6 @@ class QProcessReports(QThread):
         except Exception as e:
             logging.getLogger().error(f"Unexpected error processing reports: {e}")
             raise e
+
+        self.quit()
         

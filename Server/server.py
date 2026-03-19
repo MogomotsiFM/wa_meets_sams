@@ -8,10 +8,16 @@ import socket
 import logging
 import json
 import redis
+import signal
+
+from datetime import datetime, timedelta
 
 from contextlib import asynccontextmanager
 
 import uvicorn
+
+from apscheduler.jobstores.redis import RedisJobStore
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse, JSONResponse
@@ -47,6 +53,8 @@ if not VERIFY_TOKEN or not APP_SECRET:
 
 # Redis channel to store responses to opt-in messages
 OPT_IN_RESPONSES = os.getenv("OPT_IN_RESPONSES")
+UPLOADED_ARTIFACTS = os.getenv("UPLOADED_ARTIFACTS")
+PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
 
 REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
 
@@ -193,4 +201,6 @@ async def webhook_receive(request: Request):
 @app.get("/")
 async def root(request: Request):
     return PlainTextResponse("WhatsApp SAMS Server is running.")
+
+
 

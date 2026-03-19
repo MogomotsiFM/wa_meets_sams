@@ -22,6 +22,7 @@ from Processes.qprocess_incoming_messages import QIncomingMessagesProcessor
 
 class MainWindow(QMainWindow):
     def __init__(self, 
+                 port: int,
                  run_date: datetime,
                  app_dirs: AppDirectories, 
                  presenter_: Presenter, 
@@ -129,10 +130,10 @@ class MainWindow(QMainWindow):
         self.main_widget.adjustSize()
         self.setFixedSize(self.size())
 
-        self.initUI()
+        self.waMessagesProcessor = QIncomingMessagesProcessor(self, port, run_date)
+        self.waMessagesProcessor.start()
 
-        waMessagesProcessor = QIncomingMessagesProcessor(self, 4001, run_date)
-        waMessagesProcessor.start()
+        self.initUI()
 
 
     def initUI(self):
@@ -151,6 +152,7 @@ class MainWindow(QMainWindow):
         self.local_db_list.itemDoubleClicked.connect(self.on_continue_btn_clicked)
 
         self.close_button.clicked.connect(self.on_close_clicked)
+        self.close_button.clicked.connect(self.waMessagesProcessor.shutdown_processes)
 
 
     def sync(self):

@@ -8,7 +8,7 @@ import mimetypes
 import functools
 
 import dataclasses
-from typing import Literal, List
+from typing import Callable, Any
 
 from pathlib import Path
 
@@ -366,11 +366,48 @@ async def auto_decline():
                 await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
 
 
+async def done():
+    if len( scheduler.get_jobs() ) > 0:
+        return False
+    
+    kv = await redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
+
+    async for key in kv.scan_iter(match='*', count=1):
+        # We have at least three kv stores that co-exist. Two of them have decimal keys: phone number and grade.
+        if key.isdecimal() and len(key)>=10:
+            value = await kv.get(key)
+            rdi = ReportDeliveryInfo.create(value)
+            if rdi.opt_in_status == "Unknown":
+                return False
+            
+            if rdi.opt_in_status == "Accept":
+                for status in rdi.reports_status:
+                    if status == "not-sent":
+                        return False
+    return True
+
+
 def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: redis.Redis, kv: redis.Redis):
     @functools.wraps(processor)
     async def wrapper(message):
         return await processor(r=r, kv=kv, messanger=messanger, message=message)
     return wrapper
+
+
+async def handle_message(r: redis.Redis, pubsub, channel: str, message, processor: Callable[[str], Any], memo: dict):
+    if message['data'].decode() == "STOP":
+        if len( scheduler.get_jobs() ) == 0:
+            count = memo.setdefault(channel, 0)
+            if count >= 1:
+                pubsub.unsuscribe(channel)
+            else:
+                memo[channel] = count + 1
+                await r.publish(channel, "STOP")
+        else:
+            # Reschedule the jobs?
+            await r.publish(channel, "STOP")
+    else:
+        await asyncio.create_task(processor(message))
 
 
 async def process_messages(run_date: datetime):
@@ -394,16 +431,17 @@ async def process_messages(run_date: datetime):
 
         await pubsub.subscribe(UPLOADED_ARTIFACTS, PENDING_DELIVERY_FILENAMES, OPT_IN_RESPONSES)
 
+        memo = {}
+
         async for message in pubsub.listen():
             if message['type'] == 'message':
                 logger.info(f"Message: {message}")
                 channel = message["channel"].decode()
                 if channel == UPLOADED_ARTIFACTS:
-                    await asyncio.create_task(uploaded.asend(message))
+                    await handle_message(r, pubsub, UPLOADED_ARTIFACTS, message, uploaded.asend, memo)
                 elif channel == PENDING_DELIVERY_FILENAMES:
-                    await pending(message)
+                    await handle_message(r, pubsub, PENDING_DELIVERY_FILENAMES, message, pending, memo)
                 elif channel == OPT_IN_RESPONSES:
-                    await opt_in(message)
-
+                    await handle_message(r, pubsub, OPT_IN_RESPONSES, message, opt_in, memo)
 
 
