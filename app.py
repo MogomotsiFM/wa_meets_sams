@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 sys.coinit_flags = 2
 
@@ -40,8 +40,11 @@ app_dirs = create_report_directories(sams_path, reports_path, emblem_path)
 presenter = Presenter(app_dirs)
 printer = ReportPrinter(presenter)
 
+# We have to set a deadline for responses to opt-in messages. 
+# We need this because we have to physically print the report in the dead letter queue.
+run_date = datetime.now() + timedelta(minutes=30)
 app = QApplication(sys.argv)
-window = MainWindow(app_dirs, presenter, printer, qlogger)
+window = MainWindow(run_date, app_dirs, presenter, printer, qlogger)
 window.show()
 
 sys.exit(app.exec_())

@@ -234,7 +234,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                 message.send_retries = message.send_retries + 1
                 ct = datetime.now()
                 logger.debug(f"(MessageProcessors) Current time: {ct}")
-                run_date = ct + timedelta(seconds=30)
+                run_date = ct + timedelta(seconds=60)
                 scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
         else:
             # TODO: Add the message to the dead letter queue
@@ -342,6 +342,30 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
         scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date)
 
 
+async def auto_decline():
+    for secs, job in enumerate(scheduler.get_jobs(), start=60):
+        ct = datetime.now()
+        run_date = ct + timedelta(seconds=secs)
+        job.reschedule(trigger="date", run_date=run_date)
+
+    kv = await redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
+    r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
+
+    async for key in kv.scan_iter(match='*', count=1):
+        # We have at least three kv stores that co-exist. Two of them have decimal keys: phone number and grade.
+        if key.isdecimal() and len(key)>=10: 
+            logger.info(f"(MessageProcessor) Auto-declining the following message id: {key}")
+            value = await kv.get(key)
+            rdi = ReportDeliveryInfo.create(value)
+            if rdi.opt_in_status == "Unknown":
+                logger.debug(f"(MessageProcessor) Auto-decline: Number of reports: {len(rdi.reports)}")
+                rdi.opt_in_status = "Decline"
+                await kv.set(key, str(rdi))
+
+                msg = ReportDeliveryInfo.emulate_decision(key, rdi.opt_in_msg_id, "Decline")
+                await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
+
+
 def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: redis.Redis, kv: redis.Redis):
     @functools.wraps(processor)
     async def wrapper(message):
@@ -349,7 +373,7 @@ def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: red
     return wrapper
 
 
-async def process_messages():
+async def process_messages(run_date: datetime):
     scheduler.remove_all_jobs()
     scheduler.start()
 

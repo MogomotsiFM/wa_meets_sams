@@ -1,6 +1,8 @@
 import os
 import sys
 
+from datetime import datetime, timedelta
+
 from PyQt5.QtCore import Qt, QEvent, QThread
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QStackedLayout
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QMessageBox, QStackedWidget, QCheckBox, QListWidget
@@ -20,6 +22,7 @@ from Processes.qprocess_incoming_messages import QIncomingMessagesProcessor
 
 class MainWindow(QMainWindow):
     def __init__(self, 
+                 run_date: datetime,
                  app_dirs: AppDirectories, 
                  presenter_: Presenter, 
                  report_printer: ReportPrinter, 
@@ -27,6 +30,7 @@ class MainWindow(QMainWindow):
             ):
         super().__init__()
 
+        self.run_date = run_date
         self.app_dirs = app_dirs
         self.presenter = presenter_
         self.report_printer = report_printer
@@ -127,7 +131,7 @@ class MainWindow(QMainWindow):
 
         self.initUI()
 
-        waMessagesProcessor = QIncomingMessagesProcessor(self, 4001)
+        waMessagesProcessor = QIncomingMessagesProcessor(self, 4001, run_date)
         waMessagesProcessor.start()
 
 
@@ -250,7 +254,8 @@ class MainWindow(QMainWindow):
         # Returns 0 if the config dialog was cancelled.
         if x == QDialog.DialogCode.Accepted:
             # Open a progress tracking widget
-            pr = ProgressReport(self, self.app_dirs, self.presenter, self.report_printer, self.log_handler)
+            run_date = self.run_date + timedelta(minutes=30)
+            pr = ProgressReport(self, self.run_date, self.app_dirs, self.presenter, self.report_printer, self.log_handler)
 
             x = pr.exec_()
             if x == QDialog.DialogCode.Rejected:

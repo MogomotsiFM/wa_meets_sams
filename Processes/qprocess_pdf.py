@@ -12,6 +12,8 @@ from apscheduler.jobstores.redis import RedisJobStore
 
 from .process_pdf import process_reports, process_dead_letter_queue
 
+from .process_incoming_messages import auto_decline
+
 from Common.directories import AppDirectories
 
 from dotenv import load_dotenv
@@ -19,9 +21,16 @@ load_dotenv()
 REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
 
 class QProcessReports(QThread):
-    def __init__(self, parent: QWidget, app_dirs: AppDirectories):
+    def __init__(self, parent: QWidget, app_dirs: AppDirectories, run_date: datetime):
         super().__init__(parent)
         self.app_dirs = app_dirs
+        self.run_date = run_date
+
+    @staticmethod
+    async def clean_up(dead_letter_dir):
+        await auto_decline()
+        await asyncio.sleep(120)
+        await process_dead_letter_queue(dead_letter_dir)
 
     async def generate_report(self):
         jobstores = {
@@ -35,11 +44,9 @@ class QProcessReports(QThread):
         }
         scheduler = AsyncIOScheduler(jobstores=jobstores)
         scheduler.start()
-        
-        ct = datetime.now()
-        logging.getLogger().debug(f"(MessageProcessors) Current time: {ct}")
-        run_date = ct + timedelta(minutes=10)
-        scheduler.add_job(func=process_dead_letter_queue, args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=run_date)
+        #scheduler.add_job(func=auto_decline, trigger="date", run_date=self.run_date)
+        #scheduler.add_job(func=process_dead_letter_queue, args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=self.run_date)
+        scheduler.add_job(func="Processes.qprocess_pdf:QProcessReports.clean_up", args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=self.run_date)
 
     def run(self):
         logging.getLogger().info("Starting report processing...")
@@ -57,7 +64,7 @@ class QProcessReports(QThread):
                 )
             )
             asyncio.run(self.generate_report())
-            logging.getLogger().debug("--------------------------------Done------------------------")
+            logging.getLogger().debug("--------------------------------Done----------------------------------")
         except ValueError as e:
             logging.getLogger().error(f"Error processing reports: {e}")
 

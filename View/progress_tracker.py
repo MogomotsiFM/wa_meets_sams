@@ -1,5 +1,7 @@
 import logging
 
+from datetime import datetime
+
 from PyQt5.QtCore import pyqtSlot as Slot
 from PyQt5.QtWidgets import QDialog, QPlainTextEdit
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout
@@ -14,8 +16,9 @@ from Processes.report_printer import ReportPrinter
 from Processes.qprocess_pdf import QProcessReports
 
 class ProgressReport(QDialog):
-    def __init__(self, 
-                 parent, 
+    def __init__(self,
+                 parent,
+                 run_date: datetime,
                  app_dirs:AppDirectories, 
                  presenter: Presenter, 
                  printer: ReportPrinter, 
@@ -23,6 +26,7 @@ class ProgressReport(QDialog):
             ):
         super().__init__(parent)
 
+        self.run_date = run_date
         self.app_dirs = app_dirs
         self.presenter = presenter
         self.printer = printer
@@ -100,7 +104,7 @@ class ProgressReport(QDialog):
 
         
     def on_printer_finished(self):
-        processor = QProcessReports(self, self.app_dirs)
+        processor = QProcessReports(self, self.app_dirs, self.run_date)
         processor.start()
 
 

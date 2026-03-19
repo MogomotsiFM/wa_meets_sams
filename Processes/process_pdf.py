@@ -285,8 +285,8 @@ async def process_dead_letter_queue(dead_letter_dir: Path):
                     # Decrypt the encryption key
                     reader.decrypt(enc_key)
 
-                # The first page is the cover page
-                writer.add_page(reader.pages[1])
+                # The last page is the report itself. The first page could be the cover page.
+                writer.add_page(reader.pages[-1])
 
             output = os.path.join(dead_letter_dir, f"grade_{key}.pdf")
             with open(output, 'wb') as f:
