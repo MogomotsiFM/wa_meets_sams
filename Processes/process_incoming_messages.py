@@ -56,7 +56,7 @@ jobstores = {
         run_times_key='apscheduler.run_times' # Custom key for run times
     )
 }
-scheduler = AsyncIOScheduler(jobstores=jobstores)
+scheduler = AsyncIOScheduler(jobstores=jobstores, job_defaults={"misfire_grace_time": 15*60})
 
 
 def init() -> WhatsAppWrapper:
@@ -114,7 +114,7 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
                 ct = datetime.now()
                 logger.debug(f"(MessageProcessors) Current time: {ct}")
                 run_date = ct + timedelta(seconds=30)
-                scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date)
+                scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date, replace_existing=False)
         else:
             error_msg = f"Artifact has unknown content type: {file_path}"
             logger.error(error_msg)
@@ -126,7 +126,7 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
         ct = datetime.now()
         logger.debug(f"(MessageProcessors) Current time: {ct}")
         run_date = ct + timedelta(seconds=30)
-        scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date)
+        scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date, replace_existing=False)
 
 
 async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper):
@@ -229,7 +229,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                             ct = datetime.now()
                             logger.debug(f"(MessageProcessors) Current time: {ct}")
                             run_date = ct + timedelta(seconds=30)
-                            scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
+                            scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, replace_existing=False)
 
                     # We are in this else statement because we have been able to send an opt-in message to this number.
                     # So, we know it works and there is no need to try another number.
@@ -242,7 +242,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                 ct = datetime.now()
                 logger.debug(f"(MessageProcessors) Current time: {ct}")
                 run_date = ct + timedelta(seconds=60)
-                scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
+                scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, replace_existing=False)
         else:
             # TODO: Add the message to the dead letter queue
             logger.info(f"(MessageProcessor)  Message retried many times. It is possible that the phone number is not on WhatsApp.")
@@ -268,7 +268,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
         ct = datetime.now()
         logger.debug(f"(MessageProcessors) Current time: {ct}")
         run_date = ct + timedelta(seconds=30)
-        scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date)
+        scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, replace_existing=False)
 
 
 async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, messanger: WhatsAppWrapper):
@@ -320,7 +320,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                             ct = datetime.now()
                             logger.debug(f"(MessageProcessors) Current time: {ct}")
                             run_date = ct + timedelta(seconds=30)
-                            scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date)
+                            scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date, replace_existing=False)
                     elif btn["text"] == "Decline":
                         rdi.reports_status[idx] = "declined"
                         await kv.set(msg["from"], str(rdi))
@@ -346,7 +346,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
         ct = datetime.now()
         logger.debug(f"(MessageProcessors) Current time: {ct}")
         run_date = ct + timedelta(seconds=30)
-        scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date)
+        scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date, replace_existing=False)
 
 
 async def auto_decline():

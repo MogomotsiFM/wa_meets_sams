@@ -8,16 +8,10 @@ import socket
 import logging
 import json
 import redis
-import signal
-
-from datetime import datetime, timedelta
 
 from contextlib import asynccontextmanager
 
 import uvicorn
-
-from apscheduler.jobstores.redis import RedisJobStore
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse, JSONResponse

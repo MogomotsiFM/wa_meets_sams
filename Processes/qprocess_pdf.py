@@ -47,7 +47,7 @@ class QProcessReports(QThread):
                 run_times_key='apscheduler.run_times' # Custom key for run times
             )
         }
-        scheduler = AsyncIOScheduler(jobstores=jobstores)
+        scheduler = AsyncIOScheduler(jobstores=jobstores, job_defaults={"misfire_grace_time": 15*60})
         scheduler.start()
         scheduler.add_job(func="Processes.qprocess_pdf:QProcessReports.clean_up", args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=self.run_date)
 
