@@ -17,6 +17,8 @@ from Processes.report_printer import ReportPrinter
 
 from Presenter.presenter import Presenter
 
+from Processes.qprocess_incoming_messages import QIncomingMessagesProcessor
+
 import dotenv
 dotenv.load_dotenv()
 
@@ -47,9 +49,16 @@ printer = ReportPrinter(presenter)
 
 # We have to set a deadline for responses to opt-in messages. 
 # We need this because we have to physically print the report in the dead letter queue.
-run_date = datetime.now() + timedelta(minutes=30)
+run_date = datetime.now() + timedelta(minutes=15)
 app = QApplication(sys.argv)
 window = MainWindow(PORT, run_date, app_dirs, presenter, printer, qlogger)
 window.show()
 
-sys.exit(app.exec_())
+try:
+    waMessagesProcessor = QIncomingMessagesProcessor(window, PORT, run_date)
+    waMessagesProcessor.start()
+    sys.exit(app.exec_())
+except Exception as exp:
+    logging.getLogger().info(f"The application crashed: {exp}")
+finally:
+    waMessagesProcessor.shutdown_processes()

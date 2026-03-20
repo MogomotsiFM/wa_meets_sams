@@ -18,8 +18,6 @@ from Common.log_handler import QLogHandler
 
 from Presenter.presenter import Presenter
 
-from Processes.qprocess_incoming_messages import QIncomingMessagesProcessor
-
 class MainWindow(QMainWindow):
     def __init__(self, 
                  port: int,
@@ -130,9 +128,6 @@ class MainWindow(QMainWindow):
         self.main_widget.adjustSize()
         self.setFixedSize(self.size())
 
-        self.waMessagesProcessor = QIncomingMessagesProcessor(self, port, run_date)
-        self.waMessagesProcessor.start()
-
         self.initUI()
 
 
@@ -152,10 +147,6 @@ class MainWindow(QMainWindow):
         self.local_db_list.itemDoubleClicked.connect(self.on_continue_btn_clicked)
 
         self.close_button.clicked.connect(self.on_close_clicked)
-        self.close_button.clicked.connect(self.waMessagesProcessor.shutdown_processes)
-
-        fn = lambda : self.delete_thread(self.waMessagesProcessor)
-        self.waMessagesProcessor.done.connect(fn)
 
 
     def delete_thread(self, thread: QThread):
