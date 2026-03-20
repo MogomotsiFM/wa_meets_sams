@@ -14,7 +14,7 @@ from apscheduler.jobstores.redis import RedisJobStore
 
 from .process_pdf import process_reports, process_dead_letter_queue
 
-from .process_incoming_messages import auto_decline
+from .process_incoming_messages import auto_decline, done
 
 from Common.directories import AppDirectories
 
@@ -33,8 +33,13 @@ class QProcessReports(QThread):
     @staticmethod
     async def clean_up(dead_letter_dir):
         await auto_decline()
-        logging.getLogger().info("(QProcessReports) Sleeping...")
-        await asyncio.sleep(120)
+        while True:
+            dn = await done()
+            logging.getLogger().debug(f"Are we done processing all the messages: {dn}")
+            if dn:
+                break
+            else:
+                await asyncio.sleep(15)
         await process_dead_letter_queue(dead_letter_dir)
 
     async def generate_report(self):

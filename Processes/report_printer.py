@@ -1,3 +1,5 @@
+import logging
+
 from PyQt5.QtCore import QThread
 
 from Presenter.presenter import Presenter
@@ -9,6 +11,6 @@ class ReportPrinter(QThread):
 
     def run(self):
         config = self.presenter.print_reports_config()
-        print("Config: ", config)
+        logging.getLogger().info("Config: ", config)
         self.presenter.run(config["grades"], config["rooms"], config["cycles"], config["formats"])
 
