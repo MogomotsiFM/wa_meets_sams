@@ -154,6 +154,15 @@ class MainWindow(QMainWindow):
         self.close_button.clicked.connect(self.on_close_clicked)
         self.close_button.clicked.connect(self.waMessagesProcessor.shutdown_processes)
 
+        fn = lambda : self.delete_thread(self.waMessagesProcessor)
+        self.waMessagesProcessor.done.connect(fn)
+
+
+    def delete_thread(self, thread: QThread):
+        thread.quit()
+        thread.wait()
+        thread.deleteLater()
+
 
     def sync(self):
         self.local_db_radio.click()

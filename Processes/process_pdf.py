@@ -265,6 +265,8 @@ async def process_dead_letter_queue(dead_letter_dir: Path):
     encryption keys.
     So, it lives here
     """
+    logging.getLogger().info("(ProcessPDF) Generating print-friendly report dossiers.")
+
     kv = redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
     
     counts = {}

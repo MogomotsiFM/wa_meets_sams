@@ -10,6 +10,7 @@ import uvicorn
 from datetime import datetime
 
 from PyQt5.QtCore import QThread, pyqtSlot
+from PyQt5.QtCore import pyqtSignal as Signal
 
 import redis.asyncio as redis
 
@@ -23,6 +24,8 @@ REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
 
 
 class QIncomingMessagesProcessor(QThread):
+    done = Signal()
+
     def __init__(self, parent, port: int, run_date: datetime):
         super().__init__(parent)
         self.port = port
@@ -34,13 +37,9 @@ class QIncomingMessagesProcessor(QThread):
 
 
     async def run_helper(self):
-        #uvi = lambda: uvicorn.run("Server.server:app", port=self.port)
-        #await asyncio.gather(
-        #    pim.process_messages(self.run_date),
-        #    asyncio.to_thread(uvi),
-        #)
-        # Starting the server on a dedicated process because running it on a thread and shutting it down 
-        # using ctrl-C shuts down the entire application. This meant we could not shut the application down cleanly.
+        # Starting the server on a dedicated process because running it on a thread and shutting
+        # it down using ctrl-C shuts down the entire application. This meant we could not shut the 
+        # application down cleanly.
         self.server_proc = subprocess.Popen(
             [
                 "uvicorn", "Server.server:app", 
@@ -57,15 +56,6 @@ class QIncomingMessagesProcessor(QThread):
         await r.publish(UPLOADED_ARTIFACTS, "STOP")
         await r.publish(OPT_IN_RESPONSES, "STOP")
 
-        await pim.auto_decline()
-        
-        while True:
-            done = await pim.done()
-            if done:
-                break
-            asyncio.sleep(60)
-
-
     @pyqtSlot()
     def shutdown_processes(self):
         logging.getLogger().info("...Shutting down the FastAPI server...")
@@ -81,4 +71,5 @@ class QIncomingMessagesProcessor(QThread):
     def run(self):
         asyncio.run(self.run_helper())
 
-        self.quit()
+        self.done.emit()
+

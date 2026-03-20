@@ -39,6 +39,13 @@ OPT_IN_RESPONSES = os.getenv("OPT_IN_RESPONSES")
 if PENDING_DELIVERY_FILENAMES is None or UPLOADED_ARTIFACTS is None or OPT_IN_RESPONSES is None:
     raise ValueError("All the three redis channel names should be define in environment variable.")
 
+WA_SAMS_TOKEN = os.getenv("WA_SAMS_TOKEN")
+WA_SAMS_PHONE_ID = os.getenv("WA_SAMS_PHONE_ID")
+if WA_SAMS_TOKEN is None or WA_SAMS_PHONE_ID is None:
+    raise ValueError("WA_SAMS_TOKEN and WA_SAMS_PHONE_ID environment variables should be set.")
+else:
+    logger.debug(f"(MessageProcessors)  token: {WA_SAMS_TOKEN}")
+    logger.debug(f"(MessageProcessors)  Phone Id: {WA_SAMS_PHONE_ID}")
 
 jobstores = {
     'default': RedisJobStore(
@@ -343,6 +350,8 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
 
 
 async def auto_decline():
+    logging.getLogger().info("(MessageProcessors) Auto-declining opt-in messages.")
+
     for secs, job in enumerate(scheduler.get_jobs(), start=60):
         ct = datetime.now()
         run_date = ct + timedelta(seconds=secs)
@@ -354,7 +363,7 @@ async def auto_decline():
     async for key in kv.scan_iter(match='*', count=1):
         # We have at least three kv stores that co-exist. Two of them have decimal keys: phone number and grade.
         if key.isdecimal() and len(key)>=10: 
-            logger.info(f"(MessageProcessor) Auto-declining the following message id: {key}")
+            logger.info(f"(MessageProcessor) Auto-declining the following message id: {key}?")
             value = await kv.get(key)
             rdi = ReportDeliveryInfo.create(value)
             if rdi.opt_in_status == "Unknown":
@@ -394,18 +403,10 @@ def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: red
     return wrapper
 
 
-async def handle_message(r: redis.Redis, pubsub, channel: str, message, processor: Callable[[str], Any], memo: dict):
+async def handle_message(r: redis.Redis, pubsub, channel: str, message, processor: Callable[[str], Any], unsubscribed: dict):
     if message['data'].decode() == "STOP":
-        if len( scheduler.get_jobs() ) == 0:
-            count = memo.setdefault(channel, 0)
-            if count >= 1:
-                pubsub.unsuscribe(channel)
-            else:
-                memo[channel] = count + 1
-                await r.publish(channel, "STOP")
-        else:
-            # Reschedule the jobs?
-            await r.publish(channel, "STOP")
+        await pubsub.unsubscribe(channel)
+        unsubscribed[channel] = True
     else:
         await asyncio.create_task(processor(message))
 
@@ -420,28 +421,34 @@ async def process_messages(run_date: datetime):
     await r.flushall()
     await kv.flushall()
 
-    messanger = init()
+    #messanger = init()
 
-    async with r.pubsub() as pubsub:
-        pending = signature_preserving_decorator(upload_data, messanger, r, kv)
-        uploaded = send_opt_in_messages(r=r, kv=kv, messanger=messanger)
-        # The first message pushed into a generator has to be None.
-        await uploaded.asend(None)
-        opt_in = signature_preserving_decorator(handle_opt_in_responses, messanger, r, kv)
+    async with WhatsAppWrapper(bearer_token=WA_SAMS_TOKEN, phone_number_id=WA_SAMS_PHONE_ID) as messanger:
+        async with r.pubsub() as pubsub:
+            pending = signature_preserving_decorator(upload_data, messanger, r, kv)
+            uploaded = send_opt_in_messages(r=r, kv=kv, messanger=messanger)
+            # The first message pushed into a generator has to be None.
+            await uploaded.asend(None)
+            opt_in = signature_preserving_decorator(handle_opt_in_responses, messanger, r, kv)
 
-        await pubsub.subscribe(UPLOADED_ARTIFACTS, PENDING_DELIVERY_FILENAMES, OPT_IN_RESPONSES)
+            await pubsub.subscribe(UPLOADED_ARTIFACTS, PENDING_DELIVERY_FILENAMES, OPT_IN_RESPONSES)
 
-        memo = {}
+            unsubscribed: dict[str, bool] = {}
 
-        async for message in pubsub.listen():
-            if message['type'] == 'message':
-                logger.info(f"Message: {message}")
-                channel = message["channel"].decode()
-                if channel == UPLOADED_ARTIFACTS:
-                    await handle_message(r, pubsub, UPLOADED_ARTIFACTS, message, uploaded.asend, memo)
-                elif channel == PENDING_DELIVERY_FILENAMES:
-                    await handle_message(r, pubsub, PENDING_DELIVERY_FILENAMES, message, pending, memo)
-                elif channel == OPT_IN_RESPONSES:
-                    await handle_message(r, pubsub, OPT_IN_RESPONSES, message, opt_in, memo)
+            async for message in pubsub.listen():
+                if message['type'] == 'message':
+                    logger.info(f"Message: {message}")
+                    channel = message["channel"].decode()
+                    if channel == UPLOADED_ARTIFACTS:
+                        await handle_message(r, pubsub, UPLOADED_ARTIFACTS, message, uploaded.asend, unsubscribed)
+                    elif channel == PENDING_DELIVERY_FILENAMES:
+                        await handle_message(r, pubsub, PENDING_DELIVERY_FILENAMES, message, pending, unsubscribed)
+                    elif channel == OPT_IN_RESPONSES:
+                        await handle_message(r, pubsub, OPT_IN_RESPONSES, message, opt_in, unsubscribed)
 
+                unsubed = unsubscribed.values()
+                dn = await done()
+                if ((datetime.now() > run_date) and dn) or (len(unsubed)==3 and all(unsubed)):
+                    break
+            await pubsub.close()
 

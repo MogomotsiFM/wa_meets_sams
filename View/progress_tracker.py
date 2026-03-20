@@ -2,7 +2,7 @@ import logging
 
 from datetime import datetime
 
-from PyQt5.QtCore import pyqtSlot as Slot
+from PyQt5.QtCore import QThread, pyqtSlot as Slot
 from PyQt5.QtWidgets import QDialog, QPlainTextEdit
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout
 from PyQt5.QtWidgets import QPushButton
@@ -64,6 +64,8 @@ class ProgressReport(QDialog):
         self.setFixedSize(self.size())
         self.setModal(True)
 
+        self.processor = QProcessReports(self, self.app_dirs, self.run_date)
+
         self.initUI()
 
 
@@ -72,7 +74,17 @@ class ProgressReport(QDialog):
 
         self.log_handler.emitter.log.connect(self.append_and_scroll_scrollbar)
 
-        self.printer.finished.connect(self.on_printer_finished)
+        #self.printer.finished.connect(self.on_printer_finished)
+        self.printer.finished.connect(self.processor.start)
+
+        fn = lambda : self.delete_thread(self.processor)
+        self.processor.done.connect(fn)
+
+
+    def delete_thread(self, thread: QThread):
+        thread.quit()
+        thread.wait()
+        thread.deleteLater()
 
 
     @Slot(str)
@@ -104,7 +116,7 @@ class ProgressReport(QDialog):
 
         
     def on_printer_finished(self):
-        processor = QProcessReports(self, self.app_dirs, self.run_date)
-        processor.start()
+        #processor = QProcessReports(self, self.app_dirs, self.run_date)
+        self.processor.start()
 
 

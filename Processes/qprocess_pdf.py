@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from PyQt5.QtCore import QThread, QObject
 from PyQt5.QtWidgets import QWidget
 
+from PyQt5.QtCore import pyqtSignal as Signal
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.redis import RedisJobStore
 
@@ -21,6 +23,8 @@ load_dotenv()
 REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
 
 class QProcessReports(QThread):
+    done = Signal()
+
     def __init__(self, parent: QWidget, app_dirs: AppDirectories, run_date: datetime):
         super().__init__(parent)
         self.app_dirs = app_dirs
@@ -29,6 +33,7 @@ class QProcessReports(QThread):
     @staticmethod
     async def clean_up(dead_letter_dir):
         await auto_decline()
+        logging.getLogger().info("(QProcessReports) Sleeping...")
         await asyncio.sleep(120)
         await process_dead_letter_queue(dead_letter_dir)
 
@@ -70,5 +75,5 @@ class QProcessReports(QThread):
             logging.getLogger().error(f"Unexpected error processing reports: {e}")
             raise e
 
-        self.quit()
-        
+        self.done.emit()
+
