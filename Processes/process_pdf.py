@@ -7,6 +7,11 @@ from pathlib import Path
 
 import redis.asyncio as redis
 
+from redis.retry import Retry
+from redis.backoff import ExponentialBackoff
+from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
+
+from typing import Dict
 from dataclasses import dataclass
 
 import pandas as pd
@@ -23,10 +28,13 @@ load_dotenv()
 REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
 REDIS_KV_STORE_DB = os.getenv("KV_STORE_DB")
 
-def load_cover_page(grade: str, cover_pg_dir: str):
+def load_cover_page(grade: str, cover_pg_dir: str, cover_pgs: Dict[str, Path]):
     # TODO: Use memoization.
-    phase = "FET" if grade.capitalize() in ["10", "11", "12"] else "Senior" if grade in ["8", "9"] else "Junior"
-    cover_page_path = os.path.join(cover_pg_dir, f"{phase}_report_cover.pdf")
+    phase = "FET" if grade.capitalize() in ["10", "11", "12"] else "Senior" if grade in ["7", "8", "9"] else "Intermediate" if grade in ["4", "5", "6"] else "Foundation"
+    if len(cover_pg_dir) > 0:
+        cover_page_path = os.path.join(cover_pg_dir, f"{phase}_report_cover.pdf")
+    else:
+        cover_page_path = cover_pgs[phase]
     reader = PdfReader(cover_page_path)
     return reader.pages[0]
 
@@ -203,12 +211,16 @@ def process_pdf_by_learner(pages: list[Page], dataframe: pd.DataFrame):
 async def process_reports(db_path: str, 
                     reports_dir: Path,
                     cover_pg_dir: Path,
+                    cover_pgs: Dict[str, Path],
                     school_emblem_path: Path,
                     dead_letter_dir: Path,
                     pending_delivery_dir: Path
                 ):
     logging.getLogger().info("Starting report processing...")
-    _, joined_table = join_tables(db_path)
+    status, joined_table = join_tables(db_path)
+    if status == False:
+        logging.getLogger().error(joined_table)
+        raise ValueError(joined_table)
     logging.getLogger().debug(f"Joined table data: {joined_table}")
     dataframe = pd.DataFrame(joined_table)
 
@@ -230,10 +242,14 @@ async def process_reports(db_path: str,
             reports = process_pdf_by_learner(reader.pages, dataframe)
             for report in reports:
                 logging.getLogger().debug(f"Filename: {report.filename}, Grade: {report.grade} vs {grade}")
-                cover_page = load_cover_page(report.grade, cover_pg_dir)
-                
                 writer = PdfWriter()
-                writer.add_page(cover_page)
+                try:
+                    cover_page = load_cover_page(report.grade, cover_pg_dir, cover_pgs)
+                
+                    writer.add_page(cover_page)
+                except Exception as exp:
+                    logging.getLogger().debug(f"Cover page for grade {report.grade} was not found. All reports in this grade will not have cover pages.")
+
                 writer.add_page(report.report)
                 if report.encryption_key:
                     writer.encrypt(report.encryption_key)
@@ -267,7 +283,15 @@ async def process_dead_letter_queue(dead_letter_dir: Path):
     """
     logging.getLogger().info("(ProcessPDF) Generating print-friendly report dossiers.")
 
-    kv = redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
+    retry_strategy = Retry(ExponentialBackoff(cap=10, base=1), 3)
+    #kv = redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
+    kv = await redis.from_url(
+        "redis://localhost",
+        db=REDIS_KV_STORE_DB,
+        decode_responses=True,
+        retry=retry_strategy,
+        retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
+    )
     
     counts = {}
 

@@ -1,4 +1,6 @@
 import os
+import time
+import uuid
 import asyncio
 import logging
 
@@ -9,6 +11,7 @@ from PyQt5.QtWidgets import QWidget
 
 from PyQt5.QtCore import pyqtSignal as Signal
 
+from apscheduler.executors.pool import ThreadPoolExecutor, ProcessPoolExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.redis import RedisJobStore
 
@@ -52,9 +55,18 @@ class QProcessReports(QThread):
                 run_times_key='apscheduler.run_times' # Custom key for run times
             )
         }
-        scheduler = AsyncIOScheduler(jobstores=jobstores, job_defaults={"misfire_grace_time": 15*60})
+        executors = {
+            'default': ThreadPoolExecutor(100),
+            'processpool': ProcessPoolExecutor(10)
+        }
+        job_defaults = {
+            "misfire_grace_time": 30*60,
+            #"max_instances":1
+        }
+        #scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
+        scheduler = AsyncIOScheduler(jobstores=jobstores, job_defaults=job_defaults)
         scheduler.start()
-        scheduler.add_job(func="Processes.qprocess_pdf:QProcessReports.clean_up", args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=self.run_date)
+        scheduler.add_job(func="Processes.qprocess_pdf:QProcessReports.clean_up", args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=self.run_date, id=f"{uuid.uuid4()}")
 
     def run(self):
         logging.getLogger().info("Starting report processing...")
@@ -66,6 +78,7 @@ class QProcessReports(QThread):
                     db_path=self.app_dirs.db_path,
                     reports_dir=self.app_dirs.reports_dir,
                     cover_pg_dir=self.app_dirs.cover_pgs_dir,
+                    cover_pgs=self.app_dirs.cover_pgs_paths,
                     school_emblem_path=self.app_dirs.school_emblem_path,
                     dead_letter_dir=self.app_dirs.dead_letter_dir,
                     pending_delivery_dir=self.app_dirs.pending_delivery_dir

@@ -30,8 +30,10 @@ sams_path = os.path.join("C:\\", "Users", "GAME", "Desktop", "EdusolSAMS")
 # The current directory
 reports_path = os.path.dirname(os.path.abspath(__file__))
 
+app_dirs = create_report_directories(sams_path, reports_path)
+
 qlogger = QLogHandler()
-log_file = os.path.join(reports_path, "debug.log")
+log_file = os.path.join(app_dirs.logs_dir, "debug.log")
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s|%(levelname)s|%(name)s|%(message)s",
@@ -44,9 +46,6 @@ logging.basicConfig(
     force=True
 )
 
-emblem_path = r"C:\Users\GAME\Desktop\Projects\whatsapp_sams\Data\school_emblem.png"
-app_dirs = create_report_directories(sams_path, reports_path, emblem_path)
-
 presenter = Presenter(app_dirs)
 printer = ReportPrinter(presenter)
 
@@ -55,12 +54,18 @@ printer = ReportPrinter(presenter)
 run_date = datetime.now() + timedelta(minutes=15)
 app = QApplication(sys.argv)
 
+app.setStyleSheet("""
+    QLineEdit {
+        border: none;
+    }
+""")
+
 try:
-    window = MainWindow(PORT, run_date, app_dirs, presenter, printer, qlogger)
+    waMessagesProcessor = QIncomingMessagesProcessor(None, PORT)
+    #waMessagesProcessor.start()
+    window = MainWindow(PORT, run_date, app_dirs, presenter, printer, qlogger, waMessagesProcessor)
     window.show()
 
-    waMessagesProcessor = QIncomingMessagesProcessor(window, PORT, run_date)
-    waMessagesProcessor.start()
     sys.exit(app.exec_())
 except Exception as exp:
     logging.getLogger().info(f"The application crashed: {exp}")

@@ -6,7 +6,7 @@ from typing import List, Literal
 
 OptInDecision = Literal["Unknown", "Accept", "Decline"]
  
-ReportDeliveryStatus = Literal["sent", "not-sent", "declined"]
+ReportDeliveryStatus = Literal["sent", "not-sent", "declined", "unreachable"]
 
 @dataclasses.dataclass
 class PendingDeliveryData:

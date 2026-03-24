@@ -1,6 +1,8 @@
 import os
 import re
+import uuid
 import json
+import time
 import asyncio
 import logging
 import mimetypes
@@ -15,8 +17,13 @@ from pathlib import Path
 import redis.asyncio as redis
 import redis.client as client
 
+from redis.retry import Retry
+from redis.backoff import ExponentialBackoff
+from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
+
 from datetime import datetime, timedelta
 
+from apscheduler.executors.pool import ThreadPoolExecutor, ProcessPoolExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.redis import RedisJobStore
 
@@ -56,8 +63,18 @@ jobstores = {
         run_times_key='apscheduler.run_times' # Custom key for run times
     )
 }
-scheduler = AsyncIOScheduler(jobstores=jobstores, job_defaults={"misfire_grace_time": 15*60})
+executors = {
+    'default': ThreadPoolExecutor(100),
+    'processpool': ProcessPoolExecutor(10)
+}
+job_defaults = {
+    "misfire_grace_time": 30*60,
+    #"max_instances":1
+}
+#scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
+scheduler = AsyncIOScheduler(jobstores=jobstores, job_defaults=job_defaults)
 
+retry_strategy = Retry(ExponentialBackoff(cap=10, base=1), 3)
 
 def init() -> WhatsAppWrapper:
     WA_SAMS_TOKEN = os.getenv("WA_SAMS_TOKEN")
@@ -75,6 +92,29 @@ def init() -> WhatsAppWrapper:
 async def async_publish(channel, message: str):
     r = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
     await r.publish(channel, message)
+
+
+def safe_update(key, r: redis.Redis):
+    with r.pipeline() as pipe:
+        while True:
+            try:
+                # Watch the key for changes
+                pipe.watch(key)
+                # Read the current value
+                current_value = pipe.get(key)
+                
+                # Perform application logic
+                new_value = int(current_value or 0) + 1
+                
+                # Start transaction block
+                pipe.multi()
+                pipe.set(key, new_value)
+                # Execute; fails if 'key' changed after 'watch'
+                pipe.execute()
+                break
+            except redis.WatchError:
+                # Key was modified, retry the operation
+                continue
 
 
 async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper, message):
@@ -114,7 +154,7 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
                 ct = datetime.now()
                 logger.debug(f"(MessageProcessors) Current time: {ct}")
                 run_date = ct + timedelta(seconds=30)
-                scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date, replace_existing=False)
+                scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
         else:
             error_msg = f"Artifact has unknown content type: {file_path}"
             logger.error(error_msg)
@@ -126,7 +166,7 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
         ct = datetime.now()
         logger.debug(f"(MessageProcessors) Current time: {ct}")
         run_date = ct + timedelta(seconds=30)
-        scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date, replace_existing=False)
+        scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
 
 
 async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper):
@@ -229,7 +269,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                             ct = datetime.now()
                             logger.debug(f"(MessageProcessors) Current time: {ct}")
                             run_date = ct + timedelta(seconds=30)
-                            scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, replace_existing=False)
+                            scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
 
                     # We are in this else statement because we have been able to send an opt-in message to this number.
                     # So, we know it works and there is no need to try another number.
@@ -242,12 +282,12 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                 ct = datetime.now()
                 logger.debug(f"(MessageProcessors) Current time: {ct}")
                 run_date = ct + timedelta(seconds=60)
-                scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, replace_existing=False)
+                scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
         else:
             # TODO: Add the message to the dead letter queue
             logger.info(f"(MessageProcessor)  Message retried many times. It is possible that the phone number is not on WhatsApp.")
 
-            #rdi.reports_status[idx] = "declined"
+            rdi.reports_status[idx] = "unreachable"
             #await kv.set(msg["from"], str(rdi))
             # We add them to the list of parents for whom we must print progress reports.
             # We could also send a reminder a day before the day of collection.
@@ -268,7 +308,9 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
         ct = datetime.now()
         logger.debug(f"(MessageProcessors) Current time: {ct}")
         run_date = ct + timedelta(seconds=30)
-        scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, replace_existing=False)
+        scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
+    except BaseException as exp:
+        logger.info(f"(MessageProccessor)  BaseException Error: {exp}")
 
 
 async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, messanger: WhatsAppWrapper):
@@ -320,7 +362,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                             ct = datetime.now()
                             logger.debug(f"(MessageProcessors) Current time: {ct}")
                             run_date = ct + timedelta(seconds=30)
-                            scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date, replace_existing=False)
+                            scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
                     elif btn["text"] == "Decline":
                         rdi.reports_status[idx] = "declined"
                         await kv.set(msg["from"], str(rdi))
@@ -337,8 +379,8 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                             gr.add_report(uploaded_data.file_path, uploaded_data.encrypted_enc_key)
                             logger.info(f"(MessageProcessors) Adding another report to the grade {uploaded_data.grade} pile. Count: {len(gr.report_paths)}")
                             await kv.set(uploaded_data.grade, str(gr))
-                    else:
-                        raise ValueError("Incorrect message format. Expected a button field and none was found.")
+            else:
+                raise ValueError("Incorrect message format. Expected a button field and none was found.")
     except Exception as exp:
         logger.info(f"(MessageProcessor) Error: {exp}")
         #await r.publish(OPT_IN_RESPONSES, raw_msg)
@@ -346,7 +388,9 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
         ct = datetime.now()
         logger.debug(f"(MessageProcessors) Current time: {ct}")
         run_date = ct + timedelta(seconds=30)
-        scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date, replace_existing=False)
+        scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
+    except BaseException as exp:
+        logger.info(f"(MessageProccessor)  BaseException Error: {exp}")
 
 
 async def auto_decline():
@@ -357,7 +401,14 @@ async def auto_decline():
         run_date = ct + timedelta(seconds=secs)
         job.reschedule(trigger="date", run_date=run_date)
 
-    kv = await redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
+    #kv = await redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
+    kv = await redis.from_url(
+        "redis://localhost",
+        db=REDIS_KV_STORE_DB,
+        decode_responses=True,
+        retry=retry_strategy,
+        retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
+    )
     r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
 
     async for key in kv.scan_iter(match='*', count=1):
@@ -376,10 +427,26 @@ async def auto_decline():
 
 
 async def done():
+    r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
+
+    # Ensure that there are no subscribers
+    count  = await r.publish(PENDING_DELIVERY_FILENAMES, "STOP")
+    count += await r.publish(UPLOADED_ARTIFACTS, "STOP")
+    count += await r.publish(OPT_IN_RESPONSES, "STOP")
+    if count:
+        return False
+ 
     if len( scheduler.get_jobs() ) > 0:
         return False
     
-    kv = await redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
+    #kv = await redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
+    kv = await redis.from_url(
+        "redis://localhost",
+        db=REDIS_KV_STORE_DB,
+        decode_responses=True,
+        retry=retry_strategy,
+        retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
+    )
 
     async for key in kv.scan_iter(match='*', count=1):
         # We have at least three kv stores that co-exist. Two of them have decimal keys: phone number and grade.
@@ -389,10 +456,10 @@ async def done():
             if rdi.opt_in_status == "Unknown":
                 return False
             
-            if rdi.opt_in_status == "Accept":
-                for status in rdi.reports_status:
-                    if status == "not-sent":
-                        return False
+            for status in rdi.reports_status:
+                if status == "not-sent":
+                    return False
+            
     return True
 
 
@@ -416,7 +483,12 @@ async def process_messages(run_date: datetime):
     scheduler.start()
 
     r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
-    kv = await redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB)
+    kv = await redis.from_url(
+        "redis://localhost", 
+        db=REDIS_KV_STORE_DB, 
+        retry=retry_strategy,
+        retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
+    )
 
     await r.flushall()
     await kv.flushall()

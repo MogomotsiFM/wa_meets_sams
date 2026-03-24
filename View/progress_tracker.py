@@ -10,8 +10,6 @@ from PyQt5.QtWidgets import QPushButton
 from Common.directories import AppDirectories
 from Common.log_handler import QLogHandler
 
-from Presenter.presenter import Presenter
-
 from Processes.report_printer import ReportPrinter
 from Processes.qprocess_pdf import QProcessReports
 
@@ -20,7 +18,6 @@ class ProgressReport(QDialog):
                  parent,
                  run_date: datetime,
                  app_dirs:AppDirectories, 
-                 presenter: Presenter, 
                  printer: ReportPrinter, 
                  log_handler: QLogHandler
             ):
@@ -28,14 +25,13 @@ class ProgressReport(QDialog):
 
         self.run_date = run_date
         self.app_dirs = app_dirs
-        self.presenter = presenter
         self.printer = printer
         self.log_handler = log_handler
 
         self.setStyleSheet("font: 75 12pt Arial;")
 
         self.setWindowTitle("Progress report")
-        self.resize(550, 650)
+        self.resize(750, 650)
 
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
@@ -74,11 +70,13 @@ class ProgressReport(QDialog):
 
         self.log_handler.emitter.log.connect(self.append_and_scroll_scrollbar)
 
-        #self.printer.finished.connect(self.on_printer_finished)
-        self.printer.finished.connect(self.processor.start)
-
         fn = lambda : self.delete_thread(self.processor)
         self.processor.done.connect(fn)
+        
+        if self.printer:
+            self.printer.finished.connect(self.processor.start)
+        else:
+            self.processor.start()
 
 
     def delete_thread(self, thread: QThread):
@@ -99,11 +97,12 @@ class ProgressReport(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
 
-        self.printer.start()
+        if self.printer:
+            self.printer.start()
 
 
     def closeEvent(self, event):
-        if self.printer.isRunning():
+        if self.printer and self.printer.isRunning():
             self.printer.requestInterruption()
 
             self.printer.wait()
@@ -115,8 +114,4 @@ class ProgressReport(QDialog):
         self.close()
 
         
-    def on_printer_finished(self):
-        #processor = QProcessReports(self, self.app_dirs, self.run_date)
-        self.processor.start()
-
 
