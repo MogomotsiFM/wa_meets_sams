@@ -39,6 +39,10 @@ def load_cover_page(grade: str, cover_pg_dir: str, cover_pgs: Dict[str, Path]):
     return reader.pages[0]
 
 
+def is_valid_number(phone_number: str):
+    return len(phone_number) >= 10 and phone_number.isdigit()
+
+
 def name_file(learner: pd.Series) -> tuple[str, bool]:
     """
     Create a filename based on the learner's information.
@@ -56,19 +60,19 @@ def name_file(learner: pd.Series) -> tuple[str, bool]:
 
     contact_number_exists = False
     headers = learner.index.to_list()
-    if len(learner['Tel1']) >= 10:
+    if is_valid_number(learner['Tel1']):
         filename += f" - Tel{learner['Tel1']}"
         contact_number_exists = True
-    if len(learner['Tel2']) >= 10:
+    if is_valid_number(learner['Tel2']):
         filename += f" - Tel{learner['Tel2']}"
         contact_number_exists = True
-    if len(learner['Tel3']) >= 10:
+    if is_valid_number(learner['Tel3']):
         filename += f" - Tel{learner['Tel3']}"
         contact_number_exists = True
-    if 'SpouseCell' in headers and len(learner['SpouseCell']) >= 10:
+    if 'SpouseCell' in headers and is_valid_number(learner['SpouseCell']):
         filename += f" - Tel{learner['SpouseCell']}"
         contact_number_exists = True
-    if 'SpouseCell' in headers and len(learner['SpouseWorkTel']) >= 10:
+    if 'SpouseCell' in headers and is_valid_number(learner['SpouseWorkTel']):
         filename += f" - Tel{learner['SpouseWorkTel']}"
         contact_number_exists = True
     if 'EMail' in headers and len(learner['EMail']) > 0:
@@ -232,6 +236,7 @@ async def process_reports(db_path: str,
     d = PendingDeliveryData(school_emblem_path, "", "")
     await r.publish(PENDING_DELIVERY_FILENAMES, str(d))
 
+    index = 0
     for report_path in reports_dir.iterdir():
         if report_path.is_file() and report_path.suffix.lower() == ".pdf":
             reader = PdfReader(report_path)
@@ -251,21 +256,22 @@ async def process_reports(db_path: str,
                     logging.getLogger().debug(f"Cover page for grade {report.grade} was not found. All reports in this grade will not have cover pages.")
 
                 writer.add_page(report.report)
+                index+=1
                 if report.encryption_key:
                     writer.encrypt(report.encryption_key)
                     output_path = os.path.join(pending_delivery_dir, f"{report.filename}.pdf")
 
-                    d = PendingDeliveryData(output_path, report.grade, report.encryption_key)
+                    d = PendingDeliveryData(output_path, report.grade, report.encryption_key, index=index)
                     await r.publish(PENDING_DELIVERY_FILENAMES, str(d))
                 else:
                     output_path = os.path.join(dead_letter_dir, f"{report.filename}.pdf")
                     data = await kv.get(report.grade)
                     if data is None:
-                        gr = GradeReports( [output_path], [""] )
+                        gr = GradeReports( [output_path], [""], [index] )
                         await kv.set(report.grade, str(gr))
                     else:
                         gr = GradeReports.create(data.decode())
-                        gr.add_report(output_path, "")
+                        gr.add_report(output_path, "", index)
                         await kv.set(report.grade, str(gr))
 
                 with open(output_path, 'wb') as f:

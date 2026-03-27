@@ -9,13 +9,11 @@ import mimetypes
 
 import functools
 
-import dataclasses
-from typing import Callable, Any
+from typing import Callable, Any, Literal
 
 from pathlib import Path
 
 import redis.asyncio as redis
-import redis.client as client
 
 from redis.retry import Retry
 from redis.backoff import ExponentialBackoff
@@ -71,8 +69,7 @@ job_defaults = {
     "misfire_grace_time": 30*60,
     #"max_instances":1
 }
-#scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
-scheduler = AsyncIOScheduler(jobstores=jobstores, job_defaults=job_defaults)
+scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
 
 retry_strategy = Retry(ExponentialBackoff(cap=10, base=1), 3)
 
@@ -92,29 +89,6 @@ def init() -> WhatsAppWrapper:
 async def async_publish(channel, message: str):
     r = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
     await r.publish(channel, message)
-
-
-def safe_update(key, r: redis.Redis):
-    with r.pipeline() as pipe:
-        while True:
-            try:
-                # Watch the key for changes
-                pipe.watch(key)
-                # Read the current value
-                current_value = pipe.get(key)
-                
-                # Perform application logic
-                new_value = int(current_value or 0) + 1
-                
-                # Start transaction block
-                pipe.multi()
-                pipe.set(key, new_value)
-                # Execute; fails if 'key' changed after 'watch'
-                pipe.execute()
-                break
-            except redis.WatchError:
-                # Key was modified, retry the operation
-                continue
 
 
 async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper, message):
@@ -145,6 +119,7 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
                     upload_id = upload_response["id"],
                     file_path = file_path,
                     grade = data.grade,
+                    index = data.index,
                     encrypted_enc_key=data.encrypted_enc_key,
                     send_retries = 0
                 )
@@ -225,9 +200,10 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                     messages = response.setdefault("messages", [])
                     if len(messages) > 0 and not messages[0].setdefault("id", None) is None:
                         response_msg = messages[0]
+                        message.phone_number = phone_number
                         await kv.set(response_msg["id"], str(message))
 
-                        rdi = ReportDeliveryInfo("Unknown", response_msg["id"], [message.file_path], ["not-sent"])
+                        rdi = ReportDeliveryInfo("Unknown", response_msg["id"], [message.file_path], ["not-sent"], [message.index], [message])
                         await kv.set(phone_number, str(rdi))
                         
                         # We found a number registered on WA
@@ -237,39 +213,35 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                         logger.info(f"(MessageProcessor) Failed to send the opt-in message to {phone_number}. Trying another number.")
                         await asyncio.sleep(1)
                 else:
-                    # What is the chance the application crashed, was restarted, and we have seen the filename before?
+                    logger.info("An opt-in message has already been sent to this number because it is associated with at least two reports")
+                    message.phone_number = phone_number
+
                     rdi = ReportDeliveryInfo.create(data.decode())
-                    try:
-                        ids = [i for i, fp in enumerate(rdi.reports) if Path(message.file_path).name in fp]
-                        idx = ids[0]
-                        #idx = rds.reports.index(message.file_path)
-                        logger.info(f"(MessageProcessors) The report at index {idx} has already been processed.")
-                        logger.debug(f"(MessageProcessor) Filename: {message.file_path}")
-                    except Exception as exp:
-                        logger.info(f"(MessageProcessor) {exp}")
-                        logger.info("An opt-in message has already been sent to this number because it is associated with at least two reports")
-                        # ois = opt_in_status
-                        
-                        if not rdi.opt_in_status == "Unknown":
-                            logger.debug(f"Opt-in status: {rdi.opt_in_status}")
-                            key = f"{rdi.opt_in_msg_id}_{len(rdi.reports)}" 
-                            # Add the progress report to the KV store of report that need to be sent.
-                            await kv.set(key, str(message))
+                    ids = [i for i, fp in enumerate(rdi.reports) if Path(message.file_path).name in fp]
+                    if len(ids) == 0:
+                        new_rds = rdi.add_report(message.file_path, message.index, "not-sent")
+                        # Migrage??
+                        message.report_delivery_status = "not-sent"
+                        new_rds = rdi.add_uploaded_data(message)
+                        await kv.set(phone_number, str(new_rds))
+                    
+                    if not rdi.opt_in_status == "Unknown":
+                        logger.debug(f"Opt-in status: {rdi.opt_in_status}")
+                        key = f"{rdi.opt_in_msg_id}_{len(rdi.reports)}" 
+                        # Add the progress report to the KV store of report that need to be sent.
+                        await kv.set(key, str(message))
 
-                            new_rds = rdi.add_report(message.file_path, "not-sent")
-                            await kv.set(phone_number, str(new_rds))
-
-                            # Emulate the parent accepting/declining the offer to the opt-in request.
-                            msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rdi.opt_in_status)
-                            await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
-                            #await r.xadd(OPT_IN_RESPONSES, json.dumps(msg))
-                        else:
-                            logger.info("Parent has not responded to the opt-in message that we sent.")
-                            logger.debug("Resubmiting the report so it may be processed later.")
-                            ct = datetime.now()
-                            logger.debug(f"(MessageProcessors) Current time: {ct}")
-                            run_date = ct + timedelta(seconds=30)
-                            scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
+                        # Emulate the parent accepting/declining the offer to the opt-in request.
+                        msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rdi.opt_in_status)
+                        await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
+                        #await r.xadd(OPT_IN_RESPONSES, json.dumps(msg))
+                    else:
+                        logger.info("Parent has not responded to the opt-in message that we sent.")
+                        logger.debug("Resubmiting the report so it may be processed later.")
+                        ct = datetime.now()
+                        logger.debug(f"(MessageProcessors) Current time: {ct}")
+                        run_date = ct + timedelta(seconds=30)
+                        scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
 
                     # We are in this else statement because we have been able to send an opt-in message to this number.
                     # So, we know it works and there is no need to try another number.
@@ -284,21 +256,21 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                 run_date = ct + timedelta(seconds=60)
                 scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
         else:
-            # TODO: Add the message to the dead letter queue
             logger.info(f"(MessageProcessor)  Message retried many times. It is possible that the phone number is not on WhatsApp.")
 
-            rdi.reports_status[idx] = "unreachable"
-            #await kv.set(msg["from"], str(rdi))
-            # We add them to the list of parents for whom we must print progress reports.
-            # We could also send a reminder a day before the day of collection.
+            logger.debug("Adding the report to the list of parents for whom we must print progress reports.")
             uploaded_data = message
             reports = await kv.get(uploaded_data.grade)
             if reports is None:
-                gr = GradeReports( [uploaded_data.file_path], [uploaded_data.encrypted_enc_key] )
+                gr = GradeReports( [uploaded_data.file_path], [uploaded_data.encrypted_enc_key], [uploaded_data.index] )
+                # Migrating??
+                gr.add_uploaded_data(uploaded_data)
                 await kv.set(uploaded_data.grade, str(gr))
             else:
                 gr = GradeReports.create( reports.decode() )
-                gr.add_report(uploaded_data.file_path, uploaded_data.encrypted_enc_key)
+                gr.add_report(uploaded_data.file_path, uploaded_data.encrypted_enc_key, uploaded_data.index)
+                # Migrating??
+                gr.add_uploaded_data(uploaded_data)
                 await kv.set(uploaded_data.grade, str(gr))
 
     except Exception as exp:
@@ -310,7 +282,8 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
         run_date = ct + timedelta(seconds=30)
         scheduler.add_job(func=async_publish, args=[UPLOADED_ARTIFACTS, str(message)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
     except BaseException as exp:
-        logger.info(f"(MessageProccessor)  BaseException Error: {exp}")
+        logger.info(f"(MessageProccessor)  BaseException(asyncio?) Error: {exp}")
+        logger.error("We do not handle this case: BaseException(asyncio) error")
 
 
 async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, messanger: WhatsAppWrapper):
@@ -343,6 +316,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                 ids = [i for i, fp in enumerate(rdi.reports) if Path(uploaded_data.file_path).name in fp]
                 idx = ids[0]
                 if rdi.reports_status[idx] == "not-sent":
+                    logger.debug(f"Processing report with upload id: {opt_in_id}")
                     if btn["text"] == "Accept":
                         logger.info(f"Source phone number: {msg['from']}, report_id: {report_id}({type(report_id)})")
                         response = await messanger.send_progress_report(str(msg["from"]), str(report_id))
@@ -372,11 +346,15 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                         reports = await kv.get(uploaded_data.grade)
                         if reports is None:
                             logger.info(f"(MessageProcessor) Adding the report to the grade {uploaded_data.grade} pile.")
-                            gr = GradeReports( [uploaded_data.file_path], [uploaded_data.encrypted_enc_key] )
+                            gr = GradeReports( [uploaded_data.file_path], [uploaded_data.encrypted_enc_key], [uploaded_data.index] )
+                            # Migrating??
+                            gr.add_uploaded_data(uploaded_data)
                             await kv.set(uploaded_data.grade, str(gr))
                         else:
                             gr = GradeReports.create( reports.decode() )
-                            gr.add_report(uploaded_data.file_path, uploaded_data.encrypted_enc_key)
+                            gr.add_report(uploaded_data.file_path, uploaded_data.encrypted_enc_key, uploaded_data.index)
+                            # Migrate??
+                            gr.add_uploaded_data(uploaded_data)
                             logger.info(f"(MessageProcessors) Adding another report to the grade {uploaded_data.grade} pile. Count: {len(gr.report_paths)}")
                             await kv.set(uploaded_data.grade, str(gr))
             else:
@@ -391,6 +369,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
         scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
     except BaseException as exp:
         logger.info(f"(MessageProccessor)  BaseException Error: {exp}")
+        raise exp
 
 
 async def auto_decline():
@@ -426,41 +405,44 @@ async def auto_decline():
                 await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
 
 
-async def done():
-    r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
+async def unsubscribe(msg: Literal["STOP", "TEST"], r: redis.Redis|None=None):
+    if r is None:
+        r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
+    count  = await r.publish(PENDING_DELIVERY_FILENAMES, msg)
+    count += await r.publish(UPLOADED_ARTIFACTS, msg)
+    count += await r.publish(OPT_IN_RESPONSES, msg)
+    return count
 
-    # Ensure that there are no subscribers
-    count  = await r.publish(PENDING_DELIVERY_FILENAMES, "STOP")
-    count += await r.publish(UPLOADED_ARTIFACTS, "STOP")
-    count += await r.publish(OPT_IN_RESPONSES, "STOP")
-    if count:
-        return False
- 
-    if len( scheduler.get_jobs() ) > 0:
-        return False
-    
-    #kv = await redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
-    kv = await redis.from_url(
-        "redis://localhost",
-        db=REDIS_KV_STORE_DB,
-        decode_responses=True,
-        retry=retry_strategy,
-        retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
-    )
 
+async def done(kv: redis.Redis, r: redis.Redis|None=None):
+    # Ensure that we have seen all the reports
+    count = 0
+    max_idx = -1
     async for key in kv.scan_iter(match='*', count=1):
+        key = key.decode()
         # We have at least three kv stores that co-exist. Two of them have decimal keys: phone number and grade.
         if key.isdecimal() and len(key)>=10:
             value = await kv.get(key)
-            rdi = ReportDeliveryInfo.create(value)
+            rdi = ReportDeliveryInfo.create( value.decode() )
             if rdi.opt_in_status == "Unknown":
+                logger.debug(f"Not done: KV Store: {rdi.opt_in_status}")
                 return False
-            
-            for status in rdi.reports_status:
+
+            for status, index in zip(rdi.reports_status, rdi.unique_indices):
                 if status == "not-sent":
+                    logger.debug(f"Not done: KV Store: {rdi}")
                     return False
-            
-    return True
+                elif status == "sent":
+                    count += 1
+                    max_idx = max(max_idx, index)
+
+        if key.isdecimal() and len(key)==2:
+            value = await kv.get(key)
+            gr = GradeReports.create(value)
+            count += len(gr.unique_indices)
+            max_idx = max(max_idx, max(gr.unique_indices))
+
+    return count == max_idx
 
 
 def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: redis.Redis, kv: redis.Redis):
@@ -472,8 +454,15 @@ def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: red
 
 async def handle_message(r: redis.Redis, pubsub, channel: str, message, processor: Callable[[str], Any], unsubscribed: dict):
     if message['data'].decode() == "STOP":
-        await pubsub.unsubscribe(channel)
-        unsubscribed[channel] = True
+        if len( scheduler.get_jobs() ) == 0:
+            logger.debug(f"-----------------------------------------Unsubscribed: {channel}")
+            await pubsub.unsubscribe(channel)
+            unsubscribed[channel] = True
+        else:
+            await r.publish(channel, "STOP")
+    elif message['data'].decode() == "TEST":
+        # The message to test if there are subscribers to a channel
+        return
     else:
         await asyncio.create_task(processor(message))
 
@@ -493,8 +482,7 @@ async def process_messages(run_date: datetime):
     await r.flushall()
     await kv.flushall()
 
-    #messanger = init()
-
+    lu = datetime.now()
     async with WhatsAppWrapper(bearer_token=WA_SAMS_TOKEN, phone_number_id=WA_SAMS_PHONE_ID) as messanger:
         async with r.pubsub() as pubsub:
             pending = signature_preserving_decorator(upload_data, messanger, r, kv)
@@ -506,10 +494,8 @@ async def process_messages(run_date: datetime):
             await pubsub.subscribe(UPLOADED_ARTIFACTS, PENDING_DELIVERY_FILENAMES, OPT_IN_RESPONSES)
 
             unsubscribed: dict[str, bool] = {}
-
             async for message in pubsub.listen():
                 if message['type'] == 'message':
-                    logger.info(f"Message: {message}")
                     channel = message["channel"].decode()
                     if channel == UPLOADED_ARTIFACTS:
                         await handle_message(r, pubsub, UPLOADED_ARTIFACTS, message, uploaded.asend, unsubscribed)
@@ -518,9 +504,11 @@ async def process_messages(run_date: datetime):
                     elif channel == OPT_IN_RESPONSES:
                         await handle_message(r, pubsub, OPT_IN_RESPONSES, message, opt_in, unsubscribed)
 
-                unsubed = unsubscribed.values()
-                dn = await done()
-                if ((datetime.now() > run_date) and dn) or (len(unsubed)==3 and all(unsubed)):
-                    break
-            await pubsub.close()
+                if (datetime.now() - lu).total_seconds() > timedelta(seconds=15).total_seconds():
+                    lu = datetime.now()
+                    unsubed = unsubscribed.values()
+                    if ( (datetime.now() > run_date) and (await done(kv, r)) ) or ( len(unsubed)==3 and all(unsubed)  and (await done(kv, r)) ):
+                        break
+
+    logger.info("Redis message processor is done.")
 

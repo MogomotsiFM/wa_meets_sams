@@ -15,35 +15,68 @@ from apscheduler.executors.pool import ThreadPoolExecutor, ProcessPoolExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.redis import RedisJobStore
 
+import redis.asyncio as redis
+
+from redis.retry import Retry
+from redis.backoff import ExponentialBackoff
+from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
+
 from .process_pdf import process_reports, process_dead_letter_queue
 
-from .process_incoming_messages import auto_decline, done
+from .process_incoming_messages import auto_decline, done, unsubscribe
 
 from Common.directories import AppDirectories
 
 from dotenv import load_dotenv
 load_dotenv()
+
 REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
+REDIS_KV_STORE_DB = os.getenv("KV_STORE_DB")
 
 class QProcessReports(QThread):
     done = Signal()
+
 
     def __init__(self, parent: QWidget, app_dirs: AppDirectories, run_date: datetime):
         super().__init__(parent)
         self.app_dirs = app_dirs
         self.run_date = run_date
 
+
+    @staticmethod
+    async def shielded_clean_up(dead_letter_dir):
+        asyncio.shield(QProcessReports.clean_up(dead_letter_dir))
+
+
     @staticmethod
     async def clean_up(dead_letter_dir):
-        await auto_decline()
+        
         while True:
-            dn = await done()
-            logging.getLogger().debug(f"Are we done processing all the messages: {dn}")
-            if dn:
+            try:
+                r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
+                await auto_decline()
+
+                retry_strategy = Retry(ExponentialBackoff(cap=10, base=1), 3)
+                kv = await redis.from_url(
+                    "redis://localhost", 
+                    db=REDIS_KV_STORE_DB, 
+                    retry=retry_strategy,
+                    retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
+                )
+                while True:
+                    dn = await done(kv, r)
+                    logging.getLogger().debug(f"Are we done processing all the messages: {dn}")
+                    if dn:
+                        break
+                    else:
+                        await asyncio.sleep(15)
+                
+                await unsubscribe("STOP", r)
+                await process_dead_letter_queue(dead_letter_dir)
                 break
-            else:
-                await asyncio.sleep(15)
-        await process_dead_letter_queue(dead_letter_dir)
+            except BaseException as exp:
+                logging.getLogger().debug(f"Something threw an asyncio.CancelledError exception. Retrying...")
+
 
     async def generate_report(self):
         jobstores = {
@@ -63,10 +96,10 @@ class QProcessReports(QThread):
             "misfire_grace_time": 30*60,
             #"max_instances":1
         }
-        #scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
-        scheduler = AsyncIOScheduler(jobstores=jobstores, job_defaults=job_defaults)
+        scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
         scheduler.start()
         scheduler.add_job(func="Processes.qprocess_pdf:QProcessReports.clean_up", args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=self.run_date, id=f"{uuid.uuid4()}")
+
 
     def run(self):
         logging.getLogger().info("Starting report processing...")

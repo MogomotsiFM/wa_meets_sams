@@ -14,6 +14,10 @@ from PyQt5.QtCore import pyqtSignal as Signal
 
 import redis.asyncio as redis
 
+from redis.retry import Retry
+from redis.backoff import ExponentialBackoff
+from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
+
 from Processes import process_incoming_messages as pim
 
 PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
@@ -21,7 +25,7 @@ UPLOADED_ARTIFACTS = os.getenv("UPLOADED_ARTIFACTS")
 OPT_IN_RESPONSES = os.getenv("OPT_IN_RESPONSES")
 
 REDIS_PUBSUB_DB = os.getenv("PUBSUB_DB")
-
+REDIS_KV_STORE_DB = os.getenv("KV_STORE_DB")
 
 class QIncomingMessagesProcessor(QThread):
     done = Signal()
@@ -47,14 +51,26 @@ class QIncomingMessagesProcessor(QThread):
                 "--port", f"{self.port}"
             ]
         )
-        await pim.process_messages(self.run_date)
+        try:
+            await pim.process_messages(self.run_date)
+        except BaseException as exp:
+            logging.getLogger().debug(f"PIM exception: {exp}")
+        except Exception as exp:
+            logging.getLogger().debug(f"PIM exception: {exp}")
 
 
     async def unsubscribe(self):
-        r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
-        await r.publish(PENDING_DELIVERY_FILENAMES, "STOP")
-        await r.publish(UPLOADED_ARTIFACTS, "STOP")
-        await r.publish(OPT_IN_RESPONSES, "STOP")
+        await pim.unsubscribe("STOP")
+        
+        retry_strategy = Retry(ExponentialBackoff(cap=10, base=1), 3)
+        kv = await redis.from_url(
+            "redis://localhost", 
+            db=REDIS_KV_STORE_DB, 
+            retry=retry_strategy,
+            retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
+        )
+        while not ( await pim.done(kv) ):
+            await asyncio.sleep(15)
 
 
     @Slot()
@@ -79,7 +95,9 @@ class QIncomingMessagesProcessor(QThread):
 
 
     def run(self):
-        asyncio.run(self.run_helper())
+        task = asyncio.run(self.run_helper())
+
+        logging.getLogger().info(f"Message processing done")
 
         self.done.emit()
 

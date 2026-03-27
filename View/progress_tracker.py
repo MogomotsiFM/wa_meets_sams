@@ -31,7 +31,7 @@ class ProgressReport(QDialog):
         self.setStyleSheet("font: 75 12pt Arial;")
 
         self.setWindowTitle("Progress report")
-        self.resize(750, 650)
+        self.resize(850, 650)
 
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
@@ -70,8 +70,8 @@ class ProgressReport(QDialog):
 
         self.log_handler.emitter.log.connect(self.append_and_scroll_scrollbar)
 
-        fn = lambda : self.delete_thread(self.processor)
-        self.processor.done.connect(fn)
+        #fn = lambda : self.delete_thread(self.processor)
+        #self.processor.done.connect(fn)
         
         if self.printer:
             self.printer.finished.connect(self.processor.start)

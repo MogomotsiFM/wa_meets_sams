@@ -13,6 +13,8 @@ class PendingDeliveryData:
     file_path: str
     grade: str
     encrypted_enc_key: str
+    # Unique message index
+    index: int = -1
 
     def __str__(self):
         d = dataclasses.asdict(self)
@@ -25,35 +27,18 @@ class PendingDeliveryData:
 
 
 @dataclasses.dataclass
-class GradeReports:
-    # List of reports for a particular grade for in-person collection
-    report_paths: List[str]
-    encryption_keys: List[str]
-
-    def __str__(self):
-        d = dataclasses.asdict(self)
-        return json.dumps(d)
-    
-
-    @staticmethod
-    def create(data: str):
-        j = json.loads(data)
-        return GradeReports(**j)
-    
-    def add_report(self, report_path: str, encryption_key: str):
-        self.report_paths.append(report_path)
-        self.encryption_keys.append(encryption_key)
-        return self
-
-
-@dataclasses.dataclass
 class UploadedData:
     upload_id: str
     file_path: Path
     grade: str
+    # Unique message index
+    index: int
     encrypted_enc_key: str
     send_retries: int
-
+    # We were able to send an opt-in message to this number
+    phone_number: str = "not-set"
+    report_delivery_status: ReportDeliveryStatus = "not-sent"
+    
     def __str__(self):
         d = dataclasses.asdict(self)
         return json.dumps(d)
@@ -65,14 +50,44 @@ class UploadedData:
 
 
 @dataclasses.dataclass
+class GradeReports:
+    # List of reports for a particular grade for in-person collection
+    report_paths: List[Path]
+    encryption_keys: List[str]
+    unique_indices: List[int]
+    uploaded_data: List[UploadedData] = dataclasses.field(default_factory=list)
+
+    def __str__(self):
+        d = dataclasses.asdict(self)
+        return json.dumps(d)
+    
+    @staticmethod
+    def create(data: str):
+        j = json.loads(data)
+        return GradeReports(**j)
+    
+    def add_report(self, report_path: Path, encryption_key: str, index: int):
+        self.report_paths.append(report_path)
+        self.encryption_keys.append(encryption_key)
+        self.unique_indices.append(index)
+        return self
+    
+    def add_uploaded_data(self, uploaded_data: UploadedData):
+        self.uploaded_data.append(uploaded_data)
+        return self
+
+
+@dataclasses.dataclass
 class ReportDeliveryInfo:
     opt_in_status: OptInDecision
     #phone_number: str
     opt_in_msg_id: str
     # It is possible that a parent has multiple kids at a school
     # This keeps the list of reports associated with that parent's phone number
-    reports: List[Path]
-    reports_status: List[ReportDeliveryStatus]
+    reports: List[Path] #= dataclasses.field(default_factory=List)
+    reports_status: List[ReportDeliveryStatus] #= dataclasses.field(default_factory=List)
+    unique_indices: List[int] #= dataclasses.field(default_factory=lambda:[-1])
+    uploaded_data: List[UploadedData] = dataclasses.field(default_factory=list)
 
     def __str__(self):
         d = dataclasses.asdict(self)
@@ -84,9 +99,14 @@ class ReportDeliveryInfo:
         obj = ReportDeliveryInfo(**j)
         return obj
 
-    def add_report(self, report_path: Path, report_status: ReportDeliveryStatus = "not-sent"):
+    def add_report(self, report_path: Path, index: int, report_status: ReportDeliveryStatus = "not-sent"):
         self.reports.append(report_path)
         self.reports_status.append(report_status)
+        self.unique_indices.append(index)
+        return self
+    
+    def add_uploaded_data(self, uploaded_data: UploadedData):
+        self.uploaded_data.append(uploaded_data)
         return self
 
     @staticmethod
