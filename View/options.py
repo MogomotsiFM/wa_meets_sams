@@ -6,7 +6,7 @@ from itertools import takewhile
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QComboBox
-from PyQt5.QtWidgets import QPushButton, QLabel
+from PyQt5.QtWidgets import QPushButton, QLabel, QCheckBox
 
 from Common.busy_spinner import busy_spinner
 
@@ -14,7 +14,7 @@ from Presenter.presenter import Presenter
 
 
 class Config(QDialog):
-    def __init__(self, parent, presenter: Presenter):
+    def __init__(self, parent, presenter: Presenter|None=None):
         super().__init__(parent)
 
         self.presenter = presenter
@@ -22,7 +22,7 @@ class Config(QDialog):
         self.setStyleSheet("font: 75 12pt Arial;")
 
         self.setWindowTitle("Settings")
-        self.resize(400, 190)
+        self.resize(400, 215)
 
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
@@ -33,14 +33,12 @@ class Config(QDialog):
 
         #-----
         layout = QHBoxLayout()
-        year_label = QLabel("Year:")
+        year_label = QLabel("Year")
         
         layout.addWidget(year_label)
 
         self.years = QComboBox()
         self.years.setEditable(False)
-        years = self.presenter.get_years_list()
-        self.years.addItems(years)
         layout.addWidget(self.years)
 
         main_layout.addLayout(layout)
@@ -48,14 +46,12 @@ class Config(QDialog):
 
         #-----
         layout = QHBoxLayout()
-        grade_label = QLabel("Grade(s):")
+        grade_label = QLabel("Grade(s)")
         layout.addWidget(grade_label)
 
         self.grades = QComboBox()
         self.grades.setEditable(False)
         self.grades.setPlaceholderText(placeholder)
-        grades = self.presenter.get_grades_list()
-        self.grades.addItems(grades)
         layout.addWidget(self.grades)
 
         main_layout.addLayout(layout)
@@ -75,7 +71,7 @@ class Config(QDialog):
 
         #-----
         layout = QHBoxLayout()
-        cycle = QLabel("Assesment Cycle:")
+        cycle = QLabel("Assesment Cycle")
         layout.addWidget(cycle)
 
         self.cycles = QComboBox()
@@ -99,6 +95,18 @@ class Config(QDialog):
         main_layout.addLayout(layout)
         main_layout.addSpacing(2)
 
+        #-----
+        layout = QHBoxLayout()
+        cover_page = QLabel("Include cover page")
+        layout.addWidget(cover_page)
+
+        self.include_cover_page = QCheckBox()
+        layout.addWidget(self.include_cover_page)
+
+        main_layout.addLayout(layout)
+        main_layout.addSpacing(2)
+
+        #-----
         layout = QHBoxLayout()
         self.cancel_printing_btn = QPushButton("Cancel")
         layout.addWidget(self.cancel_printing_btn)
@@ -109,7 +117,7 @@ class Config(QDialog):
 
         main_layout.addLayout(layout)
 
-        main_layout.addStretch(2)
+        main_layout.addStretch(0)
 
         self.setFixedSize(self.size())
 
@@ -131,18 +139,23 @@ class Config(QDialog):
         self.formats.activated.connect(self.on_format_selected)
         self.send_reports_btn.clicked.connect(self.on_send_reports)
         self.cancel_printing_btn.clicked.connect(self.on_cancel_btn_clicked)
+        self.include_cover_page.toggled.connect(self.on_include_cp_clicked)
 
 
     def showEvent(self, event):
         super().showEvent(event)
         # Window is now shown and ready
-
-        QTimer.singleShot(500, self.sync)
+        if self.presenter:
+            QTimer.singleShot(500, self.sync)
 
 
     def sync(self):
+        years = self.presenter.get_years_list()
+        self.years.addItems(years)
+
         self.years.setCurrentIndex(0)
         self.grades.setCurrentIndex(0)
+        self.include_cover_page.setChecked( self.presenter.is_cover_page_included() )
 
 
     def reset(self, start: QComboBox):
@@ -249,12 +262,7 @@ class Config(QDialog):
         self.accept()
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    def on_include_cp_clicked(self):
+        self.presenter.include_cover_page( self.sender().isChecked() )
 
-    # We have not tested this!!!
-    presenter = Presenter("sams_path")
 
-    window = Config(None, presenter)
-    window.show()
-    sys.exit(app.exec_())

@@ -59,6 +59,8 @@ class Presenter:
         self.report_path = os.path.abspath(app_dirs.reports_dir)
         self.cover_pg_path = os.path.abspath(app_dirs.cover_pgs_dir)
 
+        self.include_cover_pg = True
+
         self.app, self.window = self._start(self.app_path)
 
         self.cache = self.create_controls_cache()
@@ -534,6 +536,14 @@ class Presenter:
         return self.app.is_process_running()
 
 
+    def include_cover_page(self, include_cp: bool):
+        self.include_cover_pg = include_cp
+
+
+    def is_cover_page_included(self):
+        return self.include_cover_pg
+
+
     def run(self, grade: str, room: str, cycle:str, format: str):
         desired_grade = grade
         desired_room  = room
@@ -561,7 +571,8 @@ class Presenter:
             else:
                 logger.warning(f"Swallowed error: {msg}")
 
-        cb = self.id_cb_map[ComboBoxControlId.PHASE.value]
-        self.print_cover_page(cb, "FET", self.cover_pg_path)
-        self.print_cover_page(cb, "Senior", self.cover_pg_path)
+        if self.include_cover_pg:
+            cb = self.id_cb_map[ComboBoxControlId.PHASE.value]
+            self.print_cover_page(cb, "FET", self.cover_pg_path)
+            self.print_cover_page(cb, "Senior", self.cover_pg_path)
 
