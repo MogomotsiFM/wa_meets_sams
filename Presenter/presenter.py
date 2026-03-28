@@ -12,8 +12,7 @@ from functools import reduce
 from dataclasses import dataclass
 
 from pywinauto.controls.uia_controls import ComboBoxWrapper, ButtonWrapper
-
-from pywinauto.application import Application
+from pywinauto.application import Application, WindowSpecification
 
 from typing import Literal
 
@@ -326,6 +325,13 @@ class Presenter:
 
 
     def go_to_progress_report_widget(self):
+        # Restore the window
+        self.window.window(best_match="Restore", control_type="Button").click()
+
+        # Move it to the top left
+        main = self.window.wrapper_object()
+        main.iface_transform.Move(0, 0)
+
         # Navigate to the school reports configuration tab
         home = self.controls_cache('self.window.window(best_match="Curriculum Related Data")')
         #self.window.window(best_match="Curriculum Related Data").click()
@@ -386,7 +392,7 @@ class Presenter:
         login_window.window(best_match="Exit", control_type="Button").click()
         
 
-    def _start(self, path):
+    def _start(self, path)-> tuple[Application, WindowSpecification]:
         app_location = os.path.join(path, "EdusolSAMS.exe")
 
         while(True):
