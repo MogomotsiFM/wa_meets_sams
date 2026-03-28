@@ -180,7 +180,7 @@ class Presenter:
         save_window = self.app.window(best_match="Printing records", control_type="Window")
 
         save_window = save_window.window(best_match="Save print output as", control_type="Window")
-        save_window.wait(wait_for="ready", timeout=30)
+        save_window.wait(wait_for="ready", timeout=30, retry_interval=0.2)
 
         # select_combo_box_option(save_window, "File name:", filename)
         edit = save_window.window(best_match="File name", control_type="ComboBox").window(control_type="Edit")
@@ -189,13 +189,13 @@ class Presenter:
 
         # Are we reusing a file name? We want to overwrite it.
         try:
-            save_window.window(best_match="Confirm Save As", control_type="Window").wait(wait_for="ready", timeout=2)
+            save_window.window(best_match="Confirm Save As", control_type="Window").wait(wait_for="ready", timeout=5, retry_interval=0.2)
             button = save_window.Yes.click()
         except Exception as exp:
             # Swallow the exception
             pass
 
-        parent.wait(wait_for="ready", timeout=30)
+        parent.wait(wait_for="ready", timeout=30, retry_interval=1)
         parent.Done.click()
 
 
@@ -282,7 +282,7 @@ class Presenter:
         self.window.window(title_re="POPIA").window(best_match="I accept").click()
 
         login_window = self.window.window(title_re="User Login", control_type="Window")
-        login_window.wait(wait_for="ready", timeout=15)
+        login_window.wait(wait_for="ready", timeout=15, retry_interval=0.2)
 
 
     def create_controls_cache(self):
@@ -300,17 +300,17 @@ class Presenter:
         self.use_local_db()
 
         # pywinauto is lazy so we call WindowSpecification::wait() to force evaluation...
-        cache['self.window["Copy database before opening"]'] = self.window["Copy database before opening"].wait("ready")
+        cache['self.window["Copy database before opening"]'] = self.window["Copy database before opening"].wait("ready", timeout=5, retry_interval=0.2)
 
-        cache['self.window["Databases on this computer"].window(control_type="List")'] = self.window["Databases on this computer"].window(control_type="List").wait("ready")
+        cache['self.window["Databases on this computer"].window(control_type="List")'] = self.window["Databases on this computer"].window(control_type="List").wait("ready", retry_interval=0.2)
 
-        cache['self.window["On this computer"]'] = self.window["On this computer"].wait("ready")
+        cache['self.window["On this computer"]'] = self.window["On this computer"].wait("ready", timeout=5, retry_interval=0.2)
 
         self.use_networked_db()
 
-        cache['self.window["Database on a networked computer"].window(control_type="Edit")'] = self.window["Database on a networked computer"].window(control_type="Edit").wait("ready")
+        cache['self.window["Database on a networked computer"].window(control_type="Edit")'] = self.window["Database on a networked computer"].window(control_type="Edit").wait("ready", retry_interval=0.2)
 
-        cache['self.window["On the network"]'] = self.window["On the network"].wait("ready")
+        cache['self.window["On the network"]'] = self.window["On the network"].wait("ready", timeout=5, retry_interval=0.2)
 
         return cache
 
@@ -319,7 +319,7 @@ class Presenter:
         try:
             return self.cache[key]
         except:
-            self.cache[key] = eval(f"{key}.wait('ready', timeout=20)")
+            self.cache[key] = eval(f"{key}.wait('ready', timeout=20, retry_interval=0.2)")
             return self.cache[key]
 
 
@@ -346,7 +346,7 @@ class Presenter:
         login_window.window(best_match="Log In", control_type="Button").click()
 
         try:
-            self.window.EdusolSAMS.wait("ready", timeout=1)
+            self.window.EdusolSAMS.wait("ready", timeout=5, retry_interval=0.2)
             dlg_msgs = self.window.EdusolSAMS.window(control_type="Text").texts()
             dlg_msg = reduce(lambda a, b : a + b, dlg_msgs)
             self.window.EdusolSAMS.OK.click()
@@ -366,7 +366,7 @@ class Presenter:
             # It is possible that we have tried to login too many times
             # and have been locked out.
             try:
-                login_window.EdusolSAMS.wait("ready", timeout=1)
+                login_window.EdusolSAMS.wait("ready", timeout=5, retry_interval=0.2)
                 login_lockout_msgs = login_window.EdusolSAMS.window(control_type="Text").texts()
                 login_lockout_msg  = reduce(lambda a, b : a + b, login_lockout_msgs)
                 login_window.EdusolSAMS.OK.click()
@@ -392,7 +392,7 @@ class Presenter:
                 app = Application(backend="uia").start(app_location)
 
                 window = app.window(title_re="SA-SAMS")
-                window.wait("ready", timeout=30)
+                window.wait("ready", timeout=30, retry_interval=0.2)
                 window.set_focus()
             except Exception as exp:
                 # Most likely the login window did not come up. There is a note somewhere about this.
@@ -430,7 +430,7 @@ class Presenter:
         try:
             parent = self.window.window(best_match="Print progress reports", control_type="Window")
             parent = parent.window(best_match="User Message", control_type="Window")
-            parent.wait(wait_for="ready")
+            parent.wait(wait_for="ready", timeout=2, retry_interval=0.2)
             msgs = parent.window(control_type="Text").texts()
             #parent.OK.click()
             parent.window(best_match="OK", control_type="Button").click()
@@ -505,7 +505,7 @@ class Presenter:
         try:
             parent = self.window.window(best_match="Print progress reports", control_type="Window")
             parent = parent.window(best_match="User Message", control_type="Window")
-            parent.wait(wait_for="ready", timeout=1)
+            parent.wait(wait_for="ready", timeout=2, retry_interval=0.2)
             msgs = parent.window(control_type="Text").texts()
             #parent.OK.click()
             parent.window(best_match="OK", control_type="Button").click()
@@ -546,28 +546,20 @@ class Presenter:
         
         for grade in grades:
             self.select_grade(grade)
-            
-            if "All" in desired_grade or "All" in desired_room:
-                rms = self.get_rooms_list()
-                rooms = [rm for rm in rms if "All" not in rm]
+
+            # We do this mainly because of " All" in SA-SAMS. Note that space.
+            rooms = self.get_rooms_list()
+            rm = [rm for rm in rooms if desired_room in rm]
+            self.select_room(rm[0])
+
+            cycles = self.get_report_cycles()
+            cycle_ = [c for c in cycles if desired_cycle in c]
+            is_successful, msg = self.select_report_cycle(cycle_[0])
+            if is_successful:
+                self.select_report_format(format)
+                self.process_room(grade, room, self.report_path)
             else:
-                rooms = [desired_room]
-
-            for room in rooms:
-                logging.getLogger().info(f"Writing report dossier for Grade {room} to file.")
-
-                self.select_room(room)
-
-                cycles = self.get_report_cycles()
-                cycle_ = [c for c in cycles if desired_cycle in c]
-                is_successful, msg = self.select_report_cycle(cycle_[0])
-
-                if is_successful:
-                    self.select_report_format(format)
-
-                    self.process_room(grade, room, self.report_path)
-                else:
-                    logger.warning(f"Swallowed error: {msg}")
+                logger.warning(f"Swallowed error: {msg}")
 
         cb = self.id_cb_map[ComboBoxControlId.PHASE.value]
         self.print_cover_page(cb, "FET", self.cover_pg_path)
