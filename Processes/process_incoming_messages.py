@@ -66,10 +66,10 @@ executors = {
     'processpool': ProcessPoolExecutor(10)
 }
 job_defaults = {
-    "misfire_grace_time": 30*60,
+    "misfire_grace_time": 60*60,
     #"max_instances":1
 }
-scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
+scheduler = AsyncIOScheduler(jobstores=jobstores, job_defaults=job_defaults)
 
 retry_strategy = Retry(ExponentialBackoff(cap=10, base=1), 3)
 
@@ -87,6 +87,7 @@ def init() -> WhatsAppWrapper:
 
 
 async def async_publish(channel, message: str):
+    logger.debug(f"---------------Publishing on channel:  {channel}")
     r = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
     await r.publish(channel, message)
 
@@ -503,12 +504,6 @@ async def process_messages(run_date: datetime):
                         await handle_message(r, pubsub, PENDING_DELIVERY_FILENAMES, message, pending, unsubscribed)
                     elif channel == OPT_IN_RESPONSES:
                         await handle_message(r, pubsub, OPT_IN_RESPONSES, message, opt_in, unsubscribed)
-
-                if (datetime.now() - lu).total_seconds() > timedelta(seconds=15).total_seconds():
-                    lu = datetime.now()
-                    unsubed = unsubscribed.values()
-                    if ( (datetime.now() > run_date) and (await done(kv, r)) ) or ( len(unsubed)==3 and all(unsubed)  and (await done(kv, r)) ):
-                        break
 
     logger.info("Redis message processor is done.")
 
