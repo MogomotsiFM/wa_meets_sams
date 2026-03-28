@@ -5,11 +5,8 @@ import logging
 
 from itertools import takewhile
 
-from collections import deque
-
 from enum import Enum
 from functools import reduce
-from dataclasses import dataclass
 
 from pywinauto.controls.uia_controls import ComboBoxWrapper, ButtonWrapper
 from pywinauto.application import Application, WindowSpecification
@@ -64,6 +61,7 @@ class Presenter:
 
         self.cache = self.create_controls_cache()
 
+
     def home_directory(self):
         return self.app_path
 
@@ -101,6 +99,7 @@ class Presenter:
         cbs = self.window.descendants(control_type="ComboBox")
         id_combo_box_map = {cb.control_id(): cb for cb in cbs}
         return id_combo_box_map
+
 
     # If you set the grade then you have to set the room, cycle, and maybe format
     # If you then reset the grade then you have to set these values again
@@ -141,11 +140,17 @@ class Presenter:
 
         self.window.window(best_match="Select filter options", control_type="Group").window(best_match="Selected learner", control_type="RadioButton").click()
 
+        # Get the number of selected learners and use this to estimate the time it takes to print the reports to file
+        kids = self.window.window(best_match="Language to print", control_type="Group").descendants(control_type="Edit")
+        counts = [kid.get_value() for kid in kids if len(kid.get_value()) > 0]
+        est_print_time = max([int(count) for count in counts if count.isdigit()])
+        logging.getLogger().debug(f"Estimated print time: {est_print_time}")
+
         filename = f"{grade}_{room}"
         filename = os.path.join(report_file_path, filename)
         button = self.window.window(best_match="Print progress report", control_type="Button")
 
-        self.print_pdf(button, filename)
+        self.print_pdf(button, filename, est_print_time*5.0)
 
 
     def print_cover_page(self, combo_box: ComboBoxWrapper, phase: Literal["FET", "Senior"], report_path: str):
@@ -157,10 +162,10 @@ class Presenter:
 
         button = self.window.window(best_match="Print blank report cover", control_type="Button")
         
-        self.print_pdf(button, filename)
+        self.print_pdf(button, filename, 5.0)
 
 
-    def print_pdf(self, button: ButtonWrapper, filename: str):
+    def print_pdf(self, button: ButtonWrapper, filename: str, est_print_time:float):
         button.click()
 
         # Ensure we always print to PDF by selecting the correct printer in the print setup dialog
@@ -181,7 +186,7 @@ class Presenter:
         save_window = self.app.window(best_match="Printing records", control_type="Window")
 
         save_window = save_window.window(best_match="Save print output as", control_type="Window")
-        save_window.wait(wait_for="ready", timeout=30, retry_interval=0.2)
+        save_window.wait(wait_for="ready", timeout=max(10, est_print_time), retry_interval=0.2)
 
         # select_combo_box_option(save_window, "File name:", filename)
         edit = save_window.window(best_match="File name", control_type="ComboBox").window(control_type="Edit")
