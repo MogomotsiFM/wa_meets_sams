@@ -47,11 +47,6 @@ process.stdin.on('data', (data) => {
         //console.log('Available tables:', tables);
         writeFileSync('all_tables.json', JSON.stringify(tables, null, 2));
 
-        if (tables.length < 3) {
-            //console.error('Database must contain at least 3 tables to demonstrate a 3-way join');
-            return;
-        }
-
         const [tblA, tblB, tblC] = ['Parent_Info', 'Parent_Child', 'Learner_Info'];
 
         // Register them as t1, t2, t3 in alasql
@@ -59,8 +54,8 @@ process.stdin.on('data', (data) => {
 
         const sampleSql = `
             SELECT t1.Tel1Code, t1.Tel1, t1.Tel2Code, t1.Tel2, t1.Tel3Code, t1.Tel3, t1.EMail, t1.IDNumber as ParentIDNo, t1.SpouseID, t1.SpouseCell, t1.SpouseWorkTel, t1.SpouseEmail, t3.SName, t3.FName, t3.SecondName, t3.IDNo as LearnerIDNo, t3.AccessionNo, t3.BirthDate
-            FROM t1
-            JOIN t2 ON t1.ParentId = t2.ParentID
+            FROM t2
+            JOIN t1 ON t2.ParentId = t1.ParentID
             JOIN t3 ON t2.ChildId = t3.ID
         `;
 
