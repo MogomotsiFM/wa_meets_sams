@@ -20,7 +20,7 @@ from pypdf import PdfReader, PdfWriter, PageObject as Page
 
 from .join_tables import join_tables
 
-from Common.comms_data_structs import PendingDeliveryData, GradeReports
+from Common.comms_data_structs import PendingDeliveryData, GradeReports, UploadedData
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -261,17 +261,20 @@ async def process_reports(db_path: str,
                     writer.encrypt(report.encryption_key)
                     output_path = os.path.join(pending_delivery_dir, f"{report.filename}.pdf")
 
-                    d = PendingDeliveryData(output_path, report.grade, report.encryption_key, index=index)
+                    ud = UploadedData("", output_path, grade, index, report.encryption_key, 0)
+                    d = PendingDeliveryData(output_path, report.grade, report.encryption_key, index=index, uploaded_data=ud)
                     await r.publish(PENDING_DELIVERY_FILENAMES, str(d))
                 else:
                     output_path = os.path.join(dead_letter_dir, f"{report.filename}.pdf")
+                    uploaded_data = UploadedData("", output_path, grade, index, "", 0)
                     data = await kv.get(report.grade)
                     if data is None:
-                        gr = GradeReports( [output_path], [""], [index] )
+                        gr = GradeReports( [output_path], [""], [index], [uploaded_data] )
                         await kv.set(report.grade, str(gr))
                     else:
                         gr = GradeReports.create(data.decode())
                         gr.add_report(output_path, "", index)
+                        gr.add_uploaded_data(uploaded_data)
                         await kv.set(report.grade, str(gr))
 
                 with open(output_path, 'wb') as f:

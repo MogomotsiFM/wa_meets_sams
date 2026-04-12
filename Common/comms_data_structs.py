@@ -6,24 +6,7 @@ from typing import List, Literal
 
 OptInDecision = Literal["Unknown", "Accept", "Decline"]
  
-ReportDeliveryStatus = Literal["sent", "not-sent", "declined", "unreachable"]
-
-@dataclasses.dataclass
-class PendingDeliveryData:
-    file_path: str
-    grade: str
-    encrypted_enc_key: str
-    # Unique message index
-    index: int = -1
-
-    def __str__(self):
-        d = dataclasses.asdict(self)
-        return json.dumps(d)
-    
-    @staticmethod
-    def create(data: str):
-        j = json.loads(data)
-        return PendingDeliveryData(**j)
+ReportDeliveryStatus = Literal["sent", "not-sent", "declined", "auto-declined", "unreachable"]
 
 
 @dataclasses.dataclass
@@ -34,7 +17,7 @@ class UploadedData:
     # Unique message index
     index: int
     encrypted_enc_key: str
-    send_retries: int
+    send_retries: int = 0
     # We were able to send an opt-in message to this number
     phone_number: str = "not-set"
     report_delivery_status: ReportDeliveryStatus = "not-sent"
@@ -47,6 +30,28 @@ class UploadedData:
     def create(data: str):
         j = json.loads(data)
         return UploadedData(**j)
+
+
+@dataclasses.dataclass
+class PendingDeliveryData:
+    file_path: str
+    grade: str
+    encrypted_enc_key: str
+    # Unique message index
+    index: int = -1
+    uploaded_data: UploadedData
+
+    def __str__(self):
+        d = dataclasses.asdict(self)
+        return json.dumps(d)
+    
+    @staticmethod
+    def create(data: str):
+        j = json.loads(data)
+        pdd = PendingDeliveryData(**j)
+        uploaded_data = UploadedData(pdd.uploaded_data)
+        pdd.uploaded_data = uploaded_data
+        return pdd
 
 
 @dataclasses.dataclass
@@ -64,7 +69,10 @@ class GradeReports:
     @staticmethod
     def create(data: str):
         j = json.loads(data)
-        return GradeReports(**j)
+        grade_reports =  GradeReports(**j)
+        uploaded_data = [UploadedData(ud) for ud in grade_reports.uploaded_data]
+        grade_reports.uploaded_data = uploaded_data
+        return grade_reports
     
     def add_report(self, report_path: Path, encryption_key: str, index: int):
         self.report_paths.append(report_path)
@@ -96,8 +104,10 @@ class ReportDeliveryInfo:
     @staticmethod
     def create(data: str):
         j = json.loads(data)
-        obj = ReportDeliveryInfo(**j)
-        return obj
+        rdi = ReportDeliveryInfo(**j)
+        uploaded_data = [UploadedData(ud) for ud in rdi.uploaded_data]
+        rdi.uploaded_data = uploaded_data
+        return rdi
 
     def add_report(self, report_path: Path, index: int, report_status: ReportDeliveryStatus = "not-sent"):
         self.reports.append(report_path)

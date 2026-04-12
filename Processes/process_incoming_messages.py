@@ -188,6 +188,8 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                 phone_number = phone_number.strip()
                 if phone_number[0] == '0':
                     phone_number = re.sub("0", "27", phone_number, 1)
+                elif not phone_number.startswith("27"):
+                    phone_number = "27" + phone_number
                 logger.info(f"(MessageProcessor)  Extracted phone number: {phone_number}")
 
                 # Check the phone number in the status KV store
@@ -261,6 +263,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
 
             logger.debug("Adding the report to the list of parents for whom we must print progress reports.")
             uploaded_data = message
+            uploaded_data.report_delivery_status = "unreachable"
             reports = await kv.get(uploaded_data.grade)
             if reports is None:
                 gr = GradeReports( [uploaded_data.file_path], [uploaded_data.encrypted_enc_key], [uploaded_data.index] )
@@ -327,6 +330,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                         logger.info(f"(MessageProcessor) Opt in status: {status}")
                         if status == "accepted":
                             rdi.reports_status[idx] = "sent"
+                            rdi.uploaded_data[idx].report_delivery_status = "sent"
                             await kv.set(msg["from"], str(rdi))
 
                             logger.info("The progress report was successfully sent to WA.")
@@ -340,6 +344,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                             scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
                     elif btn["text"] == "Decline":
                         rdi.reports_status[idx] = "declined"
+                        rdi.uploaded_data[idx].report_delivery_status = "declined"
                         await kv.set(msg["from"], str(rdi))
                         # We add them to the list of parents for whom we must print progress reports.
                         # We could also send a reminder a day before the day of collection.
