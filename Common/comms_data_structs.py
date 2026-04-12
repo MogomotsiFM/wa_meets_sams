@@ -120,14 +120,18 @@ class ReportDeliveryInfo:
         return self
 
     @staticmethod
-    def emulate_decision(parent_tel: str, opt_in_msg_id: str, decision: OptInDecision):
+    def emulate_decision(parent_tel: str, opt_in_msg_id: str, decision: OptInDecision, context_from: Literal["WA", "self"]):
         """
-        src_msg_id: Will be used to lookup the report upload id so that it may be send to the parent
+        opt_in_msg_id: Will be used to lookup the report upload id so that it may be send to the parent
+
+        context_from: In a real message, this would be the WA phone number of the school(the number that sent 
+                      the original opt-in message). Here, we use it to differentiate between declining opt-in messages
+                      ourselves("self") at the deadline, or genuine response from guardians via WhatsApp("WA")
         """
         msg = [
             {
                 "context":{
-                    "from":"not_applicable",
+                    "from":context_from,
                     "id":opt_in_msg_id
                 },
                 "from":parent_tel,
