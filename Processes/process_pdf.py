@@ -256,8 +256,8 @@ async def process_reports(db_path: str,
                     logging.getLogger().debug(f"Cover page for grade {report.grade} was not found. All reports in this grade will not have cover pages.")
 
                 writer.add_page(report.report)
+                index+=1
                 if report.encryption_key:
-                    index+=1
                     writer.encrypt(report.encryption_key)
                     output_path = os.path.join(pending_delivery_dir, f"{report.filename}.pdf")
 
@@ -267,11 +267,11 @@ async def process_reports(db_path: str,
                     output_path = os.path.join(dead_letter_dir, f"{report.filename}.pdf")
                     data = await kv.get(report.grade)
                     if data is None:
-                        gr = GradeReports( [output_path], [""], [-1] )
+                        gr = GradeReports( [output_path], [""], [index] )
                         await kv.set(report.grade, str(gr))
                     else:
                         gr = GradeReports.create(data.decode())
-                        gr.add_report(output_path, "", -1)
+                        gr.add_report(output_path, "", index)
                         await kv.set(report.grade, str(gr))
 
                 with open(output_path, 'wb') as f:
