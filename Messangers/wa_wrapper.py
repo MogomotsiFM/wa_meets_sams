@@ -45,6 +45,8 @@ class WhatsAppWrapper:
         }
         self.OPT_IN_MESSAGE_TEMPLATE_NAME = os.getenv("OPT_IN_MESSAGE_TEMPLATE_NAME")
         self.PROGRESS_REPORT_TEMPLATE_NAME = os.getenv("PROGRESS_REPORT_TEMPLATE_NAME")
+        if not self.OPT_IN_MESSAGE_TEMPLATE_NAME or not self.PROGRESS_REPORT_TEMPLATE_NAME:
+            raise ValueError(f"OPT_IN_MESSAGE_TEMPLATE_NAME and PROGRESS_REPORT_TEMPLATE_NAME environment variables are not defined")
         self.PROXY_URL = os.getenv("PROXY_URL")
 
         # create a single session to reuse across multiple calls
