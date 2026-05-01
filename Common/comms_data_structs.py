@@ -1,5 +1,6 @@
 import json
-import dataclasses
+
+from pydantic import BaseModel, Field
 
 from pathlib import Path
 from typing import List, Literal
@@ -9,8 +10,7 @@ OptInDecision = Literal["Unknown", "Accept", "Decline"]
 ReportDeliveryStatus = Literal["sent", "not-sent", "declined", "auto-declined", "unreachable"]
 
 
-@dataclasses.dataclass
-class UploadedData:
+class UploadedData(BaseModel):
     upload_id: str
     file_path: Path
     grade: str
@@ -23,8 +23,7 @@ class UploadedData:
     report_delivery_status: ReportDeliveryStatus = "not-sent"
     
     def __str__(self):
-        d = dataclasses.asdict(self)
-        return json.dumps(d)
+        return self.model_dump_json()
 
     @staticmethod
     def create(data: str):
@@ -32,8 +31,7 @@ class UploadedData:
         return UploadedData(**j)
 
 
-@dataclasses.dataclass
-class PendingDeliveryData:
+class PendingDeliveryData(BaseModel):
     file_path: str
     grade: str
     encrypted_enc_key: str
@@ -42,37 +40,28 @@ class PendingDeliveryData:
     uploaded_data: UploadedData
 
     def __str__(self):
-        d = dataclasses.asdict(self)
-        return json.dumps(d)
+        return self.model_dump_json()
     
     @staticmethod
     def create(data: str):
         j = json.loads(data)
-        pdd = PendingDeliveryData(**j)
-        uploaded_data = UploadedData(pdd.uploaded_data)
-        pdd.uploaded_data = uploaded_data
-        return pdd
+        return PendingDeliveryData(**j)
 
 
-@dataclasses.dataclass
-class GradeReports:
+class GradeReports(BaseModel):
     # List of reports for a particular grade for in-person collection
     report_paths: List[Path]
     encryption_keys: List[str]
     unique_indices: List[int]
-    uploaded_data: List[UploadedData] = dataclasses.field(default_factory=list)
+    uploaded_data: List[UploadedData] = Field(default_factory=list)#dataclasses.field(default_factory=list)
 
     def __str__(self):
-        d = dataclasses.asdict(self)
-        return json.dumps(d)
-    
+        return self.model_dump_json()
+ 
     @staticmethod
     def create(data: str):
         j = json.loads(data)
-        grade_reports =  GradeReports(**j)
-        uploaded_data = [UploadedData(ud) for ud in grade_reports.uploaded_data]
-        grade_reports.uploaded_data = uploaded_data
-        return grade_reports
+        return GradeReports(**j)
     
     def add_report(self, report_path: Path, encryption_key: str, index: int):
         self.report_paths.append(report_path)
@@ -85,8 +74,7 @@ class GradeReports:
         return self
 
 
-@dataclasses.dataclass
-class ReportDeliveryInfo:
+class ReportDeliveryInfo(BaseModel):
     opt_in_status: OptInDecision
     #phone_number: str
     opt_in_msg_id: str
@@ -95,19 +83,15 @@ class ReportDeliveryInfo:
     reports: List[Path] #= dataclasses.field(default_factory=List)
     reports_status: List[ReportDeliveryStatus] #= dataclasses.field(default_factory=List)
     unique_indices: List[int] #= dataclasses.field(default_factory=lambda:[-1])
-    uploaded_data: List[UploadedData] = dataclasses.field(default_factory=list)
+    uploaded_data: List[UploadedData] = Field(default_factory=list)#dataclasses.field(default_factory=list)
 
     def __str__(self):
-        d = dataclasses.asdict(self)
-        return json.dumps(d)
+        return self.model_dump_json()
 
     @staticmethod
     def create(data: str):
         j = json.loads(data)
-        rdi = ReportDeliveryInfo(**j)
-        uploaded_data = [UploadedData(ud) for ud in rdi.uploaded_data]
-        rdi.uploaded_data = uploaded_data
-        return rdi
+        return ReportDeliveryInfo(**j)
 
     def add_report(self, report_path: Path, index: int, report_status: ReportDeliveryStatus = "not-sent"):
         self.reports.append(report_path)

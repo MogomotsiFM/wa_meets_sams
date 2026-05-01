@@ -11,6 +11,8 @@ import functools
 
 from typing import Callable, Any, Literal
 
+from concurrent.futures import ProcessPoolExecutor
+
 from pathlib import Path
 
 import redis.asyncio as redis
@@ -162,6 +164,7 @@ async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: Whats
     msg_json = json.loads(msg)
     # The first message should be the school emblem
     school_emblem_id = msg_json["upload_id"]
+    logger.info(f"(Send Opt-In Messages) School emblem id: {school_emblem_id}")
 
     while True:
         message = yield to_send
@@ -183,7 +186,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
         logger.info("About to send opt-in message")
         if message.send_retries <= 5:
             filepath = message.file_path
-            matches: list[str] = re.findall("(?<=Tel)[ \d]{10,}", str(filepath))
+            matches: list[str] = re.findall(r"(?<=Tel)[ \d]{10,}", str(filepath))
             for phone_number in matches:
                 phone_number = phone_number.strip()
                 if phone_number[0] == '0':
@@ -206,7 +209,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                         message.phone_number = phone_number
                         await kv.set(response_msg["id"], str(message))
 
-                        rdi = ReportDeliveryInfo("Unknown", response_msg["id"], [message.file_path], ["not-sent"], [message.index], [message])
+                        rdi = ReportDeliveryInfo(opt_in_status="Unknown", opt_in_msg_id=response_msg["id"], reports=[message.file_path], reports_status=["not-sent"], unique_indices=[message.index], uploaded_data=[message])
                         await kv.set(phone_number, str(rdi))
                         
                         # We found a number registered on WA
@@ -220,7 +223,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                     message.phone_number = phone_number
 
                     rdi = ReportDeliveryInfo.create(data.decode())
-                    ids = [i for i, fp in enumerate(rdi.reports) if Path(message.file_path).name in fp]
+                    ids = [i for i, fp in enumerate(rdi.reports) if Path(message.file_path).name in str(fp)]
                     if len(ids) == 0:
                         new_rds = rdi.add_report(message.file_path, message.index, "not-sent")
                         # Migrage??
@@ -266,7 +269,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
             uploaded_data.report_delivery_status = "unreachable"
             reports = await kv.get(uploaded_data.grade)
             if reports is None:
-                gr = GradeReports( [uploaded_data.file_path], [uploaded_data.encrypted_enc_key], [uploaded_data.index] )
+                gr = GradeReports( report_paths=[uploaded_data.file_path], encryption_keys=[uploaded_data.encrypted_enc_key], unique_indices=[uploaded_data.index] )
                 # Migrating??
                 gr.add_uploaded_data(uploaded_data)
                 await kv.set(uploaded_data.grade, str(gr))
@@ -317,7 +320,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                 await kv.set(msg["from"], str(rdi))
 
                 # Any chance that the application crashed, was restarted, and some of the messages had already been sent?'
-                ids = [i for i, fp in enumerate(rdi.reports) if Path(uploaded_data.file_path).name in fp]
+                ids = [i for i, fp in enumerate(rdi.reports) if Path(uploaded_data.file_path).name in str(fp)]
                 idx = ids[0]
                 if rdi.reports_status[idx] == "not-sent":
                     logger.debug(f"Processing report with upload id: {opt_in_id}")
@@ -352,7 +355,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                         reports = await kv.get(uploaded_data.grade)
                         if reports is None:
                             logger.info(f"(MessageProcessor) Adding the report to the grade {uploaded_data.grade} pile.")
-                            gr = GradeReports( [uploaded_data.file_path], [uploaded_data.encrypted_enc_key], [uploaded_data.index] )
+                            gr = GradeReports( report_paths=[uploaded_data.file_path], encryption_keys=[uploaded_data.encrypted_enc_key], unique_indices=[uploaded_data.index] )
                             # Migrating??
                             gr.add_uploaded_data(uploaded_data)
                             await kv.set(uploaded_data.grade, str(gr))
@@ -461,16 +464,30 @@ def signature_preserving_decorator(processor, messanger: WhatsAppWrapper, r: red
 async def handle_message(r: redis.Redis, pubsub, channel: str, message, processor: Callable[[str], Any], unsubscribed: dict):
     if message['data'].decode() == "STOP":
         if len( scheduler.get_jobs() ) == 0:
-            logger.debug(f"-----------------------------------------Unsubscribed: {channel}")
-            await pubsub.unsubscribe(channel)
+            if unsubscribed.setdefault(channel, False):
+                logger.debug(f"-----------------------------------------Unsubscribed: {channel}")
+                await pubsub.unsubscribe(channel)
             unsubscribed[channel] = True
-        else:
+
             await r.publish(channel, "STOP")
     elif message['data'].decode() == "TEST":
         # The message to test if there are subscribers to a channel
         return
     else:
         await asyncio.create_task(processor(message))
+
+
+async def process_channel(channel: str, r: redis.Redis, process: Callable[[str], Any]):
+    async with r.pubsub() as pubsub:
+            await pubsub.subscribe(channel)
+
+            unsubscribed: dict[str, bool] = {}
+            async for message in pubsub.listen():
+                if message['type'] == 'message':
+                    if channel == message["channel"].decode():
+                        await handle_message(r, pubsub, channel, message, process, unsubscribed)
+                    else:
+                        logger.info("(ProcessMessages) A message from a different channel was received")
 
 
 async def process_messages(run_date: datetime):
@@ -488,15 +505,53 @@ async def process_messages(run_date: datetime):
     await r.flushall()
     await kv.flushall()
 
+    async with WhatsAppWrapper(bearer_token=WA_SAMS_TOKEN, phone_number_id=WA_SAMS_PHONE_ID) as messanger:
+        #loop = asyncio.get_running_loop()
+        
+        #with ProcessPoolExecutor() as executor:
+        pending = signature_preserving_decorator(upload_data, messanger, r, kv)
+        pending_task = asyncio.create_task( process_channel(PENDING_DELIVERY_FILENAMES, r, pending) )
+        #pending_task = loop.run_in_executor(excecutor, process_message(PENDING_DELIVERY_FILENAMES, r, pending))
+
+        uploaded = send_opt_in_messages(r=r, kv=kv, messanger=messanger)
+        # The first message pushed into a generator has to be None.
+        await uploaded.asend(None)
+        uploaded_task = asyncio.create_task( process_channel(UPLOADED_ARTIFACTS, r, uploaded.asend) )
+        #uploaded_task = loop.run_in_executor(executor, process_message(UPLOADED_ARTIFACTS, r, uploaded.asend))
+
+        opt_in = signature_preserving_decorator(handle_opt_in_responses, messanger, r, kv)
+        opt_in_task = asyncio.create_task( process_channel(OPT_IN_RESPONSES, r, opt_in) )
+        #opt_in_task = loop.run_in_executor(executor, process_message(OPT_IN_RESPONSES, r, opt_in))
+
+        await asyncio.gather(pending_task, uploaded_task, opt_in_task)
+    
+    logger.info("Redis message processor is done.")
+
+
+async def process_messages2(run_date: datetime):
+    scheduler.remove_all_jobs()
+    scheduler.start()
+
+    r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
+    kv = await redis.from_url(
+        "redis://localhost", 
+        db=REDIS_KV_STORE_DB, 
+        retry=retry_strategy,
+        retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
+    )
+
+    await r.flushall()
+    await kv.flushall()
+
     lu = datetime.now()
     async with WhatsAppWrapper(bearer_token=WA_SAMS_TOKEN, phone_number_id=WA_SAMS_PHONE_ID) as messanger:
-        async with r.pubsub() as pubsub:
-            pending = signature_preserving_decorator(upload_data, messanger, r, kv)
-            uploaded = send_opt_in_messages(r=r, kv=kv, messanger=messanger)
-            # The first message pushed into a generator has to be None.
-            await uploaded.asend(None)
-            opt_in = signature_preserving_decorator(handle_opt_in_responses, messanger, r, kv)
+        pending = signature_preserving_decorator(upload_data, messanger, r, kv)
+        uploaded = send_opt_in_messages(r=r, kv=kv, messanger=messanger)
+        # The first message pushed into a generator has to be None.
+        await uploaded.asend(None)
+        opt_in = signature_preserving_decorator(handle_opt_in_responses, messanger, r, kv)
 
+        async with r.pubsub() as pubsub:
             await pubsub.subscribe(UPLOADED_ARTIFACTS, PENDING_DELIVERY_FILENAMES, OPT_IN_RESPONSES)
 
             unsubscribed: dict[str, bool] = {}

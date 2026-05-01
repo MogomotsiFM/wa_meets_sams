@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import json
 import logging
 
 from pathlib import Path
@@ -83,7 +84,7 @@ def name_file(learner: pd.Series) -> tuple[str, bool]:
     return filename, contact_number_exists
 
 
-def generate_encryption_key(learner: pd.DataFrame) -> str:
+def generate_encryption_key(learner: pd.Series) -> str:
     """
     Generate an encryption key based on the learner's ParentIDNo or SpouseID.
     If both are missing, generate a key from the learner's name.
@@ -225,7 +226,7 @@ async def process_reports(db_path: str,
     if status == False:
         logging.getLogger().error(joined_table)
         raise ValueError(joined_table)
-    logging.getLogger().debug(f"Joined table data: {joined_table}")
+    logging.getLogger().debug(f"Joined table data: {json.dumps(joined_table, indent=2)}")
     dataframe = pd.DataFrame(joined_table)
 
     r = redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
@@ -233,7 +234,8 @@ async def process_reports(db_path: str,
 
     # The first message should be the path to the school emblem
     PENDING_DELIVERY_FILENAMES = os.getenv("PENDING_DELIVERY_FILENAMES")
-    d = PendingDeliveryData(school_emblem_path, "", "")
+    ud = UploadedData(upload_id="", file_path=school_emblem_path, grade="", index=-1, encrypted_enc_key="")
+    d = PendingDeliveryData(file_path=school_emblem_path, grade="", encrypted_enc_key="", uploaded_data=ud)
     await r.publish(PENDING_DELIVERY_FILENAMES, str(d))
 
     index = 0
@@ -261,15 +263,15 @@ async def process_reports(db_path: str,
                     writer.encrypt(report.encryption_key)
                     output_path = os.path.join(pending_delivery_dir, f"{report.filename}.pdf")
 
-                    ud = UploadedData("", output_path, grade, index, report.encryption_key, 0)
-                    d = PendingDeliveryData(output_path, report.grade, report.encryption_key, index=index, uploaded_data=ud)
+                    ud = UploadedData(upload_id="", file_path=output_path, grade=grade, index=index, encrypted_enc_key=report.encryption_key, send_retries=0)
+                    d = PendingDeliveryData(file_path=output_path, grade=report.grade, encrypted_enc_key=report.encryption_key, index=index, uploaded_data=ud)
                     await r.publish(PENDING_DELIVERY_FILENAMES, str(d))
                 else:
                     output_path = os.path.join(dead_letter_dir, f"{report.filename}.pdf")
-                    uploaded_data = UploadedData("", output_path, grade, index, "", 0)
+                    uploaded_data = UploadedData(upload_id="", file_path=output_path, grade=grade, index=index, encrypted_enc_key="", send_retries=0)
                     data = await kv.get(report.grade)
                     if data is None:
-                        gr = GradeReports( [output_path], [""], [index], [uploaded_data] )
+                        gr = GradeReports( report_paths=[output_path], encryption_keys=[""], unique_indices=[index], uploaded_data=[uploaded_data] )
                         await kv.set(report.grade, str(gr))
                     else:
                         gr = GradeReports.create(data.decode())
@@ -306,7 +308,7 @@ async def process_dead_letter_queue(dead_letter_dir: Path):
 
     async for key in kv.scan_iter(match='*', count=1):
         try:
-            key = int(key)
+            int(key)
             writer = PdfWriter()
 
             data = await kv.get(key)
