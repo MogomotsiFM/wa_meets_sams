@@ -1,11 +1,14 @@
 #npm
 #localtunnel
 #
+pyqt5
+qtawesome
+pyqtspinner
 pywinauto
 pandas
 aiohttp
 fastapi
-fastapi-guard
+fastapi-guard==4.4.1
 uvicorn
 redis
 redis[hiredis]
