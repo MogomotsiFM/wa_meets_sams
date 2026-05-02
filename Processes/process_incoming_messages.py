@@ -407,8 +407,6 @@ async def auto_decline():
             rdi = ReportDeliveryInfo.create(value)
             if rdi.opt_in_status == "Unknown":
                 logger.debug(f"(MessageProcessor) Auto-decline: Number of reports: {len(rdi.reports)}")
-                rdi.opt_in_status = "Decline"
-                await kv.set(key, str(rdi))
 
                 msg = ReportDeliveryInfo.emulate_decision(key, rdi.opt_in_msg_id, "Decline", "self")
                 await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
