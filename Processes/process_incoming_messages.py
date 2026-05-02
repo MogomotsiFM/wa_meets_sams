@@ -445,7 +445,7 @@ async def done(kv: redis.Redis, r: redis.Redis|None=None):
                     count += 1
                     max_idx = max(max_idx, index)
 
-        if key.isdecimal() and len(key)==2:
+        if key.isdecimal() and len(key)<=2:
             value = await kv.get(key)
             gr = GradeReports.create(value)
             count += len(gr.unique_indices)
