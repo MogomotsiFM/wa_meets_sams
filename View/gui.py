@@ -27,6 +27,7 @@ from Processes.qprocess_incoming_messages import QIncomingMessagesProcessor as Q
 
 from Common.directories import AppDirectories
 from Common.log_handler import QLogHandler
+from Common.busy_spinner import busy_spinner
 
 from Presenter.presenter import Presenter
 
@@ -198,6 +199,7 @@ class MainWindow(QMainWindow):
         self.sync()
 
 
+    @busy_spinner
     def closeEvent(self, event):
         if self.presenter.is_running():
             try:
@@ -209,7 +211,8 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
-    def on_close_clicked(self):
+    @busy_spinner
+    def on_close_clicked(self, _):
         self.close()
 
 
