@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from pathlib import Path
 from typing import List, Literal
 
-OptInDecision = Literal["Unknown", "Accept", "Decline"]
+OptInDecision = Literal["Unknown", "Accept", "Decline", "Auto-Decline"]
  
 ReportDeliveryStatus = Literal["sent", "not-sent", "declined", "auto-declined", "unreachable"]
 
@@ -104,18 +104,14 @@ class ReportDeliveryInfo(BaseModel):
         return self
 
     @staticmethod
-    def emulate_decision(parent_tel: str, opt_in_msg_id: str, decision: OptInDecision, context_from: Literal["WA", "self"]):
+    def emulate_decision(parent_tel: str, opt_in_msg_id: str, decision: OptInDecision):
         """
         opt_in_msg_id: Will be used to lookup the report upload id so that it may be send to the parent
-
-        context_from: In a real message, this would be the WA phone number of the school(the number that sent 
-                      the original opt-in message). Here, we use it to differentiate between declining opt-in messages
-                      ourselves("self") at the deadline, or genuine response from guardians via WhatsApp("WA")
         """
         msg = [
             {
                 "context":{
-                    "from":context_from,
+                    "from":"not_applicable",
                     "id":opt_in_msg_id
                 },
                 "from":parent_tel,

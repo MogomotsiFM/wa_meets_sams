@@ -238,7 +238,7 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                         await kv.set(key, str(message))
 
                         # Emulate the parent accepting/declining the offer to the opt-in request.
-                        msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rdi.opt_in_status, "WA")
+                        msg = ReportDeliveryInfo.emulate_decision(phone_number, key, rdi.opt_in_status)
                         await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
                         #await r.xadd(OPT_IN_RESPONSES, json.dumps(msg))
                     else:
@@ -345,9 +345,11 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
                             logger.debug(f"(MessageProcessors) Current time: {ct}")
                             run_date = ct + timedelta(seconds=30)
                             scheduler.add_job(func=async_publish, args=[OPT_IN_RESPONSES, raw_msg], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
-                    elif btn["text"] == "Decline":
-                        rdi.reports_status[idx] = "auto-declined" if context["from"]=="self" else "declined" 
-                        rdi.uploaded_data[idx].report_delivery_status = "auto-declined" if context["from"]=="self" else "declined"
+                    #elif btn["text"] == "Decline":
+                    else:
+                        uploaded_data.report_delivery_status = "auto-declined" if btn["text"]=="Auto-Decline" else "declined"
+                        rdi.reports_status[idx] = uploaded_data.report_delivery_status 
+                        rdi.uploaded_data[idx].report_delivery_status = uploaded_data.report_delivery_status
                         await kv.set(msg["from"], str(rdi))
                         # We add them to the list of parents for whom we must print progress reports.
                         # We could also send a reminder a day before the day of collection.
@@ -408,7 +410,7 @@ async def auto_decline():
             if rdi.opt_in_status == "Unknown":
                 logger.debug(f"(MessageProcessor) Auto-decline: Number of reports: {len(rdi.reports)}")
 
-                msg = ReportDeliveryInfo.emulate_decision(key, rdi.opt_in_msg_id, "Decline", "self")
+                msg = ReportDeliveryInfo.emulate_decision(key, rdi.opt_in_msg_id, "Auto-Decline")
                 await r.publish(OPT_IN_RESPONSES, json.dumps(msg))
 
 
