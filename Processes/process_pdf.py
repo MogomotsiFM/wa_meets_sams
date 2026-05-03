@@ -12,7 +12,7 @@ from redis.retry import Retry
 from redis.backoff import ExponentialBackoff
 from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
 
-from typing import Dict
+from typing import Dict, List, get_args
 from dataclasses import dataclass
 
 import pandas as pd
@@ -21,7 +21,7 @@ from pypdf import PdfReader, PdfWriter, PageObject as Page
 
 from .join_tables import join_tables
 
-from Common.comms_data_structs import PendingDeliveryData, GradeReports, UploadedData
+from Common.comms_data_structs import PendingDeliveryData, GradeReports, UploadedData, ReportDeliveryStatus, ReportDeliveryInfo
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -263,12 +263,12 @@ async def process_reports(db_path: str,
                     writer.encrypt(report.encryption_key)
                     output_path = os.path.join(pending_delivery_dir, f"{report.filename}.pdf")
 
-                    ud = UploadedData(upload_id="", file_path=output_path, grade=grade, index=index, encrypted_enc_key=report.encryption_key, send_retries=0)
+                    ud = UploadedData(upload_id="", file_path=output_path, grade=report.grade, index=index, encrypted_enc_key=report.encryption_key, send_retries=0)
                     d = PendingDeliveryData(file_path=output_path, grade=report.grade, encrypted_enc_key=report.encryption_key, index=index, uploaded_data=ud)
                     await r.publish(PENDING_DELIVERY_FILENAMES, str(d))
                 else:
                     output_path = os.path.join(dead_letter_dir, f"{report.filename}.pdf")
-                    uploaded_data = UploadedData(upload_id="", file_path=output_path, grade=grade, index=index, encrypted_enc_key="", send_retries=0)
+                    uploaded_data = UploadedData(upload_id="", file_path=output_path, grade=report.grade, index=index, encrypted_enc_key="", send_retries=0)
                     data = await kv.get(report.grade)
                     if data is None:
                         gr = GradeReports( report_paths=[output_path], encryption_keys=[""], unique_indices=[index], uploaded_data=[uploaded_data] )
@@ -285,7 +285,7 @@ async def process_reports(db_path: str,
                 logging.getLogger().info(f"Saved report: {report.filename} with key: {report.encryption_key}")
 
 
-async def process_dead_letter_queue(dead_letter_dir: Path):
+async def process_dead_letter_queue(dead_letter_dir: Path, reports_dir: Path):
     """
     This function could also live in the process messages scope.
     But it needs a PDF writer, the encryption package, and the encryption key used to encrypt progress report
@@ -304,35 +304,69 @@ async def process_dead_letter_queue(dead_letter_dir: Path):
         retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
     )
     
-    counts = {}
+    report: Dict[ReportDeliveryStatus, Dict[int, int]] = {k: {} for k in get_args(ReportDeliveryStatus)}
 
     async for key in kv.scan_iter(match='*', count=1):
         try:
-            int(key)
-            writer = PdfWriter()
+            if key.isdigit():
+                data = await kv.get(key)
 
-            data = await kv.get(key)
-            gr = GradeReports.create(data)
+                if len(key) <= 2:
+                    gr = GradeReports.create(data)
+                    report = generate_report(gr.uploaded_data, report)
 
-            counts[key] = len(gr.report_paths)
+                    writer = PdfWriter()
+                    for report_path, enc_key in zip(gr.report_paths, gr.encryption_keys):
+                        reader = PdfReader(report_path)
+                        if reader.is_encrypted:
+                            # Decrypt the encryption key
+                            reader.decrypt(enc_key)
 
-            for report_path, enc_key in zip(gr.report_paths, gr.encryption_keys):
-                reader = PdfReader(report_path)
-                if reader.is_encrypted:
-                    # Decrypt the encryption key
-                    reader.decrypt(enc_key)
+                        # The last page is the report itself. The first page could be the cover page.
+                        writer.add_page(reader.pages[-1])
 
-                # The last page is the report itself. The first page could be the cover page.
-                writer.add_page(reader.pages[-1])
+                    output = os.path.join(dead_letter_dir, f"grade_{key}.pdf")
+                    with open(output, 'wb') as f:
+                        writer.write(f)
+                else: # Key is a phone number
+                    rds = ReportDeliveryInfo.create(data)
+                    if rds.opt_in_status == "Accept":
+                        assert rds.uploaded_data[0].report_delivery_status=="sent", "The report delivery status of an accepted opt-in request should be 'sent'"
+                        report = generate_report(rds.uploaded_data, report)
 
-            output = os.path.join(dead_letter_dir, f"grade_{key}.pdf")
-            with open(output, 'wb') as f:
-                writer.write(f)
         except Exception as exp:
             logging.getLogger().debug(f"(ProcessorPDF) Error: {exp}")
 
-    for k, v in counts.items():
-        logging.getLogger().info(f"(ProcessPDF) Expected Grade {k} parents: {v}")
+    save_report(report, reports_dir)
+
+
+def generate_report(grade_reports: List[UploadedData], report: Dict[ReportDeliveryStatus, Dict[int, int]]):
+    for ud in grade_reports:
+        rpt = report.setdefault(ud.report_delivery_status, {})
+        count = rpt.setdefault(ud.grade, 0) + 1
+        rpt[ud.grade] = count
+        report[ud.report_delivery_status] = rpt
+    return report
+
+
+def save_report(report: Dict[ReportDeliveryStatus, Dict[int, int]], reports_dir: Path):
+    df = pd.DataFrame(report)
+    df.columns = df.columns.str.title()
+    df.fillna(0, inplace=True)
+    df = df.astype(int)
+    df.sort_index(inplace=True)
+
+    df["Total"] = df.sum(axis=1)
+    total = pd.DataFrame([df.sum()], index=["Total"])
+    df = pd.concat([df, total])
+
+    report_path = os.path.join(reports_dir, "report.csv")
+    df.to_csv(report_path, index_label="Grade")
+    try:
+        report_path = os.path.join(reports_dir, "report.xsl")
+        df.to_excel(report_path, index_label="grade")
+    except Exception:
+        logging.getLogger().info("(ProcessPDF) Could not write the report to Excel.")
 
 
 if __name__ == "__main__":

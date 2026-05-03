@@ -1,12 +1,11 @@
 import os
-import time
 import uuid
 import asyncio
 import logging
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from PyQt5.QtCore import QThread, QObject
+from PyQt5.QtCore import QThread
 from PyQt5.QtWidgets import QWidget
 
 from PyQt5.QtCore import pyqtSignal as Signal
@@ -49,7 +48,7 @@ class QProcessReports(QThread):
 
 
     @staticmethod
-    async def clean_up(dead_letter_dir):
+    async def clean_up(dead_letter_dir, reports_dir):
         
         while True:
             try:
@@ -72,10 +71,11 @@ class QProcessReports(QThread):
                         await asyncio.sleep(15)
                 
                 await unsubscribe("STOP", r)
-                await process_dead_letter_queue(dead_letter_dir)
+                await process_dead_letter_queue(dead_letter_dir, reports_dir)
                 break
             except BaseException as exp:
-                logging.getLogger().debug(f"Something threw an asyncio.CancelledError exception. Retrying...")
+                logging.getLogger().debug(f"Something threw an asyncio.CancelledError exception: {exp}")
+                logging.getLogger().debug("Retrying...")
 
 
     async def generate_report(self):
@@ -98,7 +98,9 @@ class QProcessReports(QThread):
         }
         scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
         scheduler.start()
-        scheduler.add_job(func="Processes.qprocess_pdf:QProcessReports.clean_up", args=[self.app_dirs.dead_letter_dir], trigger="date", run_date=self.run_date, id=f"{uuid.uuid4()}")
+        dead_letter_dir = self.app_dirs.dead_letter_dir
+        reports_dir = self.app_dirs.reports_dir
+        scheduler.add_job(func="Processes.qprocess_pdf:QProcessReports.clean_up", args=[dead_letter_dir, reports_dir], trigger="date", run_date=self.run_date, id=f"{uuid.uuid4()}")
 
 
     def run(self):
