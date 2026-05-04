@@ -18,7 +18,7 @@ import qtawesome as qta
 from .login import Login
 from .options import Config
 from .db_selection_widget import DbSelection
-from .config import WorkflowConfig
+from .workflow_config import WorkflowConfig
 from .progress_tracker import ProgressReport
 from .cover_pgs_table import CoverPagesTable
 
