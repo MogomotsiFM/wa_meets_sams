@@ -383,7 +383,7 @@ async def handle_opt_in_responses(r: redis.Redis, kv: redis.Redis, message, mess
         raise exp
 
 
-async def auto_decline():
+async def auto_decline(kv: redis.Redis, r: redis.Redis):
     logging.getLogger().info("(MessageProcessors) Auto-declining opt-in messages.")
 
     for secs, job in enumerate(scheduler.get_jobs(), start=60):
@@ -391,22 +391,13 @@ async def auto_decline():
         run_date = ct + timedelta(seconds=secs)
         job.reschedule(trigger="date", run_date=run_date)
 
-    #kv = await redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
-    kv = await redis.from_url(
-        "redis://localhost",
-        db=REDIS_KV_STORE_DB,
-        decode_responses=True,
-        retry=retry_strategy,
-        retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
-    )
-    r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
-
     async for key in kv.scan_iter(match='*', count=1):
+        key = key.decode()
         # We have at least three kv stores that co-exist. Two of them have decimal keys: phone number and grade.
         if key.isdecimal() and len(key)>=10: 
             logger.info(f"(MessageProcessor) Auto-declining the following message id: {key}?")
             value = await kv.get(key)
-            rdi = ReportDeliveryInfo.create(value)
+            rdi = ReportDeliveryInfo.create(value.decode())
             if rdi.opt_in_status == "Unknown":
                 logger.debug(f"(MessageProcessor) Auto-decline: Number of reports: {len(rdi.reports)}")
 

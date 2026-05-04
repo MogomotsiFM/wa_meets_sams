@@ -285,7 +285,7 @@ async def process_reports(db_path: str,
                 logging.getLogger().info(f"Saved report: {report.filename} with key: {report.encryption_key}")
 
 
-async def process_dead_letter_queue(dead_letter_dir: Path, reports_dir: Path):
+async def process_dead_letter_queue(kv: redis.Redis, dead_letter_dir: Path, reports_dir: Path):
     """
     This function could also live in the process messages scope.
     But it needs a PDF writer, the encryption package, and the encryption key used to encrypt progress report
@@ -294,22 +294,14 @@ async def process_dead_letter_queue(dead_letter_dir: Path, reports_dir: Path):
     """
     logging.getLogger().info("(ProcessPDF) Generating print-friendly report dossiers.")
 
-    retry_strategy = Retry(ExponentialBackoff(cap=10, base=1), 3)
-    #kv = redis.from_url("redis://localhost", db=REDIS_KV_STORE_DB, decode_responses=True)
-    kv = await redis.from_url(
-        "redis://localhost",
-        db=REDIS_KV_STORE_DB,
-        decode_responses=True,
-        retry=retry_strategy,
-        retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
-    )
-    
     report: Dict[ReportDeliveryStatus, Dict[int, int]] = {k: {} for k in get_args(ReportDeliveryStatus)}
 
     async for key in kv.scan_iter(match='*', count=1):
         try:
+            key = key.decode()
             if key.isdigit():
                 data = await kv.get(key)
+                data = data.decode()
 
                 if len(key) <= 2:
                     gr = GradeReports.create(data)

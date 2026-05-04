@@ -53,7 +53,6 @@ class QProcessReports(QThread):
         while True:
             try:
                 r  = await redis.from_url("redis://localhost", db=REDIS_PUBSUB_DB)
-                await auto_decline()
 
                 retry_strategy = Retry(ExponentialBackoff(cap=10, base=1), 3)
                 kv = await redis.from_url(
@@ -62,6 +61,8 @@ class QProcessReports(QThread):
                     retry=retry_strategy,
                     retry_on_error=[BusyLoadingError, ConnectionError, TimeoutError, asyncio.exceptions.CancelledError]
                 )
+                await auto_decline(kv, r)
+
                 while True:
                     dn = await done(kv, r)
                     logging.getLogger().debug(f"Are we done processing all the messages: {dn}")
@@ -71,7 +72,7 @@ class QProcessReports(QThread):
                         await asyncio.sleep(15)
                 
                 await unsubscribe("STOP", r)
-                await process_dead_letter_queue(dead_letter_dir, reports_dir)
+                await process_dead_letter_queue(kv, dead_letter_dir, reports_dir)
                 break
             except BaseException as exp:
                 logging.getLogger().debug(f"Something threw an asyncio.CancelledError exception: {exp}")
