@@ -37,10 +37,8 @@ class QIncomingMessagesProcessor(QThread):
         # Auto-decline opt-in messages. This is required because we need to physically print reports in the dead letter queue.
         # Collate the dead letter queue reports into so they are easier to print.
         self.run_date = None
-        self.server_proc = None
+        self.report_collection_date = None
 
-
-    async def run_helper(self):
         # Starting the server on a dedicated process because running it on a thread and shutting
         # it down using ctrl-C shuts down the entire application. This meant we could not shut the 
         # application down cleanly.
@@ -51,8 +49,11 @@ class QIncomingMessagesProcessor(QThread):
                 "--port", f"{self.port}"
             ]
         )
+
+
+    async def process_messages(self):
         try:
-            await pim.process_messages(self.run_date)
+            await pim.process_messages(self.run_date, self.report_collection_date)
         except BaseException as exp:
             logging.getLogger().debug(f"PIM exception: {exp}")
         except Exception as exp:
@@ -88,14 +89,15 @@ class QIncomingMessagesProcessor(QThread):
 
 
     @Slot(datetime)
-    def start(self, run_date: datetime):
+    def start(self, run_date: datetime, report_collection_date: datetime):
         self.run_date = run_date
+        self.report_collection_date = report_collection_date
 
         super().start()
 
 
     def run(self):
-        task = asyncio.run(self.run_helper())
+        task = asyncio.run(self.process_messages())
 
         logging.getLogger().info(f"Message processing done")
 

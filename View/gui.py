@@ -8,7 +8,7 @@ from pathlib import Path
 
 from datetime import datetime
 
-from PyQt5.QtCore import Qt, QEvent, QThread, QDateTime
+from PyQt5.QtCore import Qt, QThread, QDateTime
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QHeaderView
 from PyQt5.QtWidgets import QLineEdit, QPushButton, QLabel, QGroupBox, QFileDialog, QTabWidget
@@ -43,7 +43,9 @@ class MainWindow(QMainWindow):
             ):
         super().__init__()
 
-        self.run_date = run_date
+        self.run_date = None
+        self.collection_date = None
+
         self.app_dirs = app_dirs
         self.presenter = presenter_
         self.report_printer = report_printer
@@ -169,8 +171,11 @@ class MainWindow(QMainWindow):
 
         self.conf_widget.emblem_edit.textChanged.connect(self.on_emblem_path_changed)
 
-        self.conf_widget.dead_date.dateChanged.connect(self.on_date_time_changed)
-        self.conf_widget.dead_time.timeChanged.connect(self.on_date_time_changed)
+        self.conf_widget.dead_date.dateChanged.connect(self.on_deadline_date_time_changed)
+        self.conf_widget.dead_time.timeChanged.connect(self.on_deadline_date_time_changed)
+
+        self.conf_widget.collection_date.dateChanged.connect(self.on_collection_date_time_changed)
+        self.conf_widget.collection_time.timeChanged.connect(self.on_collection_date_time_changed)
 
 
     def delete_thread(self, thread: QThread):
@@ -226,11 +231,18 @@ class MainWindow(QMainWindow):
         self.cp_group.setEnabled(enable)
 
 
-    def on_date_time_changed(self):
+    def on_deadline_date_time_changed(self):
         d = self.conf_widget.dead_date.date()
         t = self.conf_widget.dead_time.time()
         dt = QDateTime(d, t)
         self.run_date = dt.toPyDateTime()
+
+
+    def on_collection_date_time_changed(self):
+        d = self.conf_widget.collection_date.date()
+        t = self.conf_widget.collection_time.time()
+        dt = QDateTime(d, t)
+        self.collection_date = dt.toPyDateTime()
 
 
     def open_file_dialog(self):
@@ -339,7 +351,7 @@ class MainWindow(QMainWindow):
     def on_continue_btn_clicked(self):
         self.app_dirs.cover_pgs_paths = self.cover_pgs.get_cover_pages()
 
-        self.qimp.start(self.run_date)
+        self.qimp.start(self.run_date, self.collection_date)
         time.sleep(5)
 
         if self.conf_widget.upload.isChecked():

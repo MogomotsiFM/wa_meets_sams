@@ -147,7 +147,7 @@ async def upload_data(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrappe
         scheduler.add_job(func=async_publish, args=[PENDING_DELIVERY_FILENAMES, str(data)], trigger="date", run_date=run_date, id=f"{uuid.uuid4()}", replace_existing=False)
 
 
-async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper):
+async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: WhatsAppWrapper, collection_date: datetime):
     """
     r: Used for pub-sub
     kv: Used as a key-value store
@@ -171,10 +171,10 @@ async def send_opt_in_messages(r: redis.Redis, kv: redis.Redis, messanger: Whats
         msg_str = message["data"].decode()
         msg = UploadedData.create(msg_str)
         logger.info(f"(Send Opt-In Messages) Opt-in message destination: {msg}")
-        await send_opt_in_messages_helper(r=r, kv=kv, messanger=messanger, message=msg, school_emblem_id=school_emblem_id)
+        await send_opt_in_messages_helper(r=r, kv=kv, messanger=messanger, message=msg, school_emblem_id=school_emblem_id, collection_date=collection_date)
 
 
-async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger:WhatsAppWrapper, message: UploadedData, school_emblem_id: str):
+async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger:WhatsAppWrapper, message: UploadedData, school_emblem_id: str, collection_date: datetime):
     """
     r: Used for pub-sub
     kv: Used as a key-value store
@@ -200,7 +200,12 @@ async def send_opt_in_messages_helper(r: redis.Redis, kv: redis.Redis, messanger
                 logger.debug(f"\nData: {data}\n")
                 if data == None:
                     logger.debug(f"Sending an opt-in message for the first time: {phone_number}")
-                    response = await messanger.send_opt_in_message(phone_number, school_emblem_id, date="March 6", weekday="Friday", time="10.30am")
+                    day = collection_date.day
+                    month = collection_date.strftime("%B")
+                    date = f"{month} {day}"
+                    weekday = collection_date.strftime("%A")
+                    time = collection_date.strftime("%H:%M")
+                    response = await messanger.send_opt_in_message(phone_number, school_emblem_id, date=date, weekday=weekday, time=time)
                     logger.debug(f"(MessageProcessors)  Response from sending opt in message: {response}")
                 
                     messages = response.setdefault("messages", [])
@@ -481,7 +486,7 @@ async def process_channel(channel: str, r: redis.Redis, process: Callable[[str],
                         logger.info("(ProcessMessages) A message from a different channel was received")
 
 
-async def process_messages(run_date: datetime):
+async def process_messages(run_date: datetime, report_collection_date: datetime):
     scheduler.remove_all_jobs()
     scheduler.start()
 
@@ -504,7 +509,7 @@ async def process_messages(run_date: datetime):
         pending_task = asyncio.create_task( process_channel(PENDING_DELIVERY_FILENAMES, r, pending) )
         #pending_task = loop.run_in_executor(excecutor, process_message(PENDING_DELIVERY_FILENAMES, r, pending))
 
-        uploaded = send_opt_in_messages(r=r, kv=kv, messanger=messanger)
+        uploaded = send_opt_in_messages(r=r, kv=kv, messanger=messanger, collection_date=report_collection_date)
         # The first message pushed into a generator has to be None.
         await uploaded.asend(None)
         uploaded_task = asyncio.create_task( process_channel(UPLOADED_ARTIFACTS, r, uploaded.asend) )
@@ -519,7 +524,7 @@ async def process_messages(run_date: datetime):
     logger.info("Redis message processor is done.")
 
 
-async def process_messages2(run_date: datetime):
+async def process_messages2(run_date: datetime, report_collection_date: datetime):
     scheduler.remove_all_jobs()
     scheduler.start()
 
@@ -537,7 +542,7 @@ async def process_messages2(run_date: datetime):
     lu = datetime.now()
     async with WhatsAppWrapper(bearer_token=WA_SAMS_TOKEN, phone_number_id=WA_SAMS_PHONE_ID) as messanger:
         pending = signature_preserving_decorator(upload_data, messanger, r, kv)
-        uploaded = send_opt_in_messages(r=r, kv=kv, messanger=messanger)
+        uploaded = send_opt_in_messages(r=r, kv=kv, messanger=messanger, collection_date=report_collection_date)
         # The first message pushed into a generator has to be None.
         await uploaded.asend(None)
         opt_in = signature_preserving_decorator(handle_opt_in_responses, messanger, r, kv)
