@@ -475,15 +475,15 @@ async def handle_message(r: redis.Redis, pubsub, channel: str, message, processo
 
 async def process_channel(channel: str, r: redis.Redis, process: Callable[[str], Any]):
     async with r.pubsub() as pubsub:
-            await pubsub.subscribe(channel)
+        await pubsub.subscribe(channel)
 
-            unsubscribed: dict[str, bool] = {}
-            async for message in pubsub.listen():
-                if message['type'] == 'message':
-                    if channel == message["channel"].decode():
-                        await handle_message(r, pubsub, channel, message, process, unsubscribed)
-                    else:
-                        logger.info("(ProcessMessages) A message from a different channel was received")
+        unsubscribed: dict[str, bool] = {}
+        async for message in pubsub.listen():
+            if message['type'] == 'message':
+                if channel == message["channel"].decode():
+                    await handle_message(r, pubsub, channel, message, process, unsubscribed)
+                else:
+                    logger.info("(ProcessMessages) A message from a different channel was received")
 
 
 async def process_messages(run_date: datetime, report_collection_date: datetime):
