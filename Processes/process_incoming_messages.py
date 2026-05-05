@@ -465,7 +465,7 @@ async def handle_message(r: redis.Redis, pubsub, channel: str, message, processo
                 await pubsub.unsubscribe(channel)
             unsubscribed[channel] = True
 
-            await r.publish(channel, "STOP")
+        await r.publish(channel, "STOP")
     elif message['data'].decode() == "TEST":
         # The message to test if there are subscribers to a channel
         return
